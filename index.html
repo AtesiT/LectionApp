@@ -2,128 +2,590 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Motion Playground Web</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#070711" />
+  <meta name="description" content="Motion Playground — анимации, 3D, эффекты и совместная сессия в браузере" />
+  <title>Motion Playground</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="theme-neon">
+  <canvas id="cursorCanvas" class="cursor-canvas" aria-hidden="true"></canvas>
+
+  <!-- Экран входа -->
   <div id="entryGate" class="entry-gate" role="dialog" aria-modal="true" aria-labelledby="entryTitle">
     <div class="entry-card">
-      <h2 id="entryTitle">Вход в Motion Playground</h2>
-      <p class="entry-lead">Чтобы начать работу, укажите имя и подключитесь к совместной сессии.</p>
-      <form id="entryForm" class="entry-form">
+      <div class="entry-top">
+        <h2 id="entryTitle" data-i18n="entry.title">Вход в Motion Playground</h2>
+        <button type="button" id="entryLangBtn" class="chip-btn" title="Language">EN</button>
+      </div>
+      <p class="entry-lead" data-i18n="entry.lead">Укажите имя, выберите аватар и подключитесь к комнате.</p>
+      <form id="entryForm" class="entry-form" autocomplete="off">
         <label class="field">
-          <span>Ваше имя <em class="required-mark">*</em></span>
-          <input
-            id="entryUserName"
-            type="text"
-            maxlength="32"
-            minlength="1"
-            required
-            placeholder="Например, Алексей"
-            autocomplete="nickname"
-            aria-required="true"
-          />
+          <span><span data-i18n="entry.name">Ваше имя</span> <em class="required-mark">*</em></span>
+          <input id="entryUserName" type="text" maxlength="32" minlength="1" required data-i18n-placeholder="entry.namePh" placeholder="Например, Алексей" autocomplete="nickname" aria-required="true" />
         </label>
-        <button id="entryConnectBtn" class="primary" type="submit">Войти в сессию</button>
-        <p id="entryStatus" class="entry-status">Проверка сервера…</p>
+
+        <div class="field">
+          <span data-i18n="entry.avatar">Аватар</span>
+          <div id="avatarGrid" class="avatar-grid" role="radiogroup" aria-label="Аватар"></div>
+        </div>
+
+        <div class="entry-room-row">
+          <label class="field">
+            <span data-i18n="entry.room">Комната</span>
+            <input id="entryRoom" type="text" maxlength="8" data-i18n-placeholder="entry.roomPh" placeholder="Код (пусто = MAIN)" autocapitalize="characters" />
+          </label>
+          <button type="button" id="entryCreateRoom" class="ghost" data-i18n="entry.createRoom">Новая комната</button>
+        </div>
+        <div id="roomsList" class="rooms-list" aria-live="polite"></div>
+
+        <button id="entryConnectBtn" class="primary" type="submit" data-i18n="entry.connect">Войти в сессию</button>
+        <p id="entryStatus" class="entry-status" data-i18n="entry.checking">Проверка сервера…</p>
       </form>
     </div>
   </div>
 
+  <div id="announceBar" class="announce-bar" hidden>
+    <span id="announceText"></span>
+    <button type="button" id="announceClose" class="icon-btn" aria-label="Закрыть">✕</button>
+  </div>
+
   <main id="mainApp" class="app" inert>
-    <header class="header">
-      <h1>Motion Playground</h1>
-      <p>Web‑версия для ПК: анимации, темы и совместная сессия для нескольких участников</p>
+    <!-- Верхняя панель -->
+    <header class="topbar">
+      <div class="brand">
+        <button type="button" id="brandBtn" class="brand-btn" title="Motion Playground">
+          <span class="brand-logo" aria-hidden="true"></span>
+          <span class="brand-title">Motion Playground</span>
+        </button>
+        <span id="roomChip" class="chip room-chip" title="Комната">MAIN</span>
+        <span id="connStatus" class="chip conn-chip offline" data-i18n="conn.offline">Не подключено</span>
+      </div>
+
+      <div class="topbar-widgets">
+        <span id="clockChip" class="chip clock-chip" title="Время">--:--</span>
+        <button type="button" id="weatherChip" class="chip chip-btn weather-chip" title="Погода" data-tab-link="widgets">🌤 —</button>
+        <div id="ratesTicker" class="rates-ticker" aria-live="off"></div>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" id="undoBtn" class="icon-btn" title="Отменить (Ctrl+Z)" disabled>↶</button>
+        <button type="button" id="redoBtn" class="icon-btn" title="Повторить (Ctrl+Y)" disabled>↷</button>
+        <button type="button" id="soundBtn" class="icon-btn" title="Звук (M)">🔊</button>
+        <button type="button" id="notifyBtn" class="icon-btn" title="Уведомления">🔔</button>
+        <button type="button" id="pipBtn" class="icon-btn" title="Картинка в картинке">⧉</button>
+        <button type="button" id="fullscreenBtn" class="icon-btn" title="Полный экран (F)">⛶</button>
+        <button type="button" id="presentBtn" class="icon-btn" title="Режим презентации (P)">▶</button>
+        <button type="button" id="paletteBtn" class="icon-btn" title="Командная палитра (Ctrl+K)">⌘</button>
+        <button type="button" id="helpBtn" class="icon-btn" title="Справка (?)">?</button>
+        <button type="button" id="langToggle" class="icon-btn lang-btn" title="Language">EN</button>
+      </div>
     </header>
 
-    <section class="stage-wrap" aria-label="Сцена анимации">
+    <!-- Сцена -->
+    <section id="stageWrap" class="stage-wrap" aria-label="Сцена анимации">
       <div class="stage-layout">
-        <div id="stage" class="stage">
+        <div id="stage" class="stage" tabindex="0">
+          <div id="stageBg" class="stage-bg" aria-hidden="true"></div>
+          <video id="stageVideo" class="stage-video hidden" autoplay muted loop playsinline aria-hidden="true"></video>
           <div class="glow" aria-hidden="true"></div>
-          <div id="actor" class="actor local-actor">
-            <div id="shape" class="shape circle"></div>
-            <div id="model3d" class="css-model hidden" aria-label="3D модель куба" role="img">
-              <div class="cube3d">
-                <span class="face front">3D</span>
-                <span class="face back"></span>
-                <span class="face right"></span>
-                <span class="face left"></span>
-                <span class="face top"></span>
-                <span class="face bottom"></span>
-              </div>
+          <div id="weatherOverlay" class="weather-overlay" aria-hidden="true"></div>
+          <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
+
+          <div id="objectsLayer" class="objects-layer"></div>
+
+          <div id="model3dWrap" class="model3d-wrap hidden">
+            <div id="model3dAnim" class="model3d-anim">
+              <div id="model3d" class="css-model" role="img" aria-label="3D модель"></div>
             </div>
           </div>
+          <canvas id="webglCanvas" class="webgl-canvas hidden" aria-label="WebGL сцена"></canvas>
+
+          <canvas id="boardCanvas" class="board-canvas" aria-label="Общая доска"></canvas>
+          <canvas id="audioCanvas" class="audio-canvas hidden" aria-hidden="true"></canvas>
+          <div id="cursorsLayer" class="cursors-layer" aria-hidden="true"></div>
+          <div id="reactionsLayer" class="reactions-layer" aria-hidden="true"></div>
+
+          <div id="stageHint" class="stage-hint" hidden></div>
+
+          <div class="stage-toolbar">
+            <button type="button" id="startBtn" class="tool-btn primary" title="Старт (Space)" data-i18n="btn.start">Старт</button>
+            <button type="button" id="stopBtn" class="tool-btn" title="Стоп (Space)" data-i18n="btn.stop">Стоп</button>
+            <button type="button" id="randomBtn" class="tool-btn" title="Случайно (R)">🎲 <span data-i18n="btn.random">Случайно</span></button>
+            <button type="button" id="drawToggle" class="tool-btn" title="Рисовать на доске (B)">✏️ <span data-i18n="btn.draw">Доска</span></button>
+            <button type="button" id="micBtn" class="tool-btn" title="Реакция на микрофон">🎤</button>
+            <button type="button" id="voiceBtn" class="tool-btn" title="Голосовое управление (V)">🗣</button>
+          </div>
+          <div id="voiceStatus" class="voice-status" hidden></div>
         </div>
 
-        <aside class="models-sidebar" aria-label="Объекты подключенных пользователей">
+        <aside class="models-sidebar" aria-label="Объекты подключённых пользователей">
           <div class="models-sidebar-head">
-            <h2>Пользователи</h2>
-            <span>4 видно сразу</span>
+            <h2 data-i18n="users.title">Участники</h2>
+            <span id="usersCount">0</span>
           </div>
           <div id="usersShowcase" class="users-showcase" aria-live="polite"></div>
         </aside>
       </div>
     </section>
 
-    <section class="controls" aria-label="Настройки">
-      <label class="field">
-        <span>Тема</span>
-        <select id="themeSelect">
-          <option value="dark">Dark</option>
-          <option value="neon" selected>Neon</option>
-          <option value="pastel">Pastel</option>
-        </select>
-      </label>
+    <!-- Вкладки -->
+    <nav class="tabs" role="tablist" aria-label="Разделы">
+      <button type="button" class="tab active" role="tab" data-tab="object" data-i18n="tab.object">Объект</button>
+      <button type="button" class="tab" role="tab" data-tab="animations" data-i18n="tab.animations">Анимации</button>
+      <button type="button" class="tab" role="tab" data-tab="model" data-i18n="tab.model">3D</button>
+      <button type="button" class="tab" role="tab" data-tab="scene" data-i18n="tab.scene">Сцена</button>
+      <button type="button" class="tab" role="tab" data-tab="sound" data-i18n="tab.sound">Звук и голос</button>
+      <button type="button" class="tab" role="tab" data-tab="session" data-i18n="tab.session">Сессия</button>
+      <button type="button" class="tab" role="tab" data-tab="widgets" data-i18n="tab.widgets">Виджеты</button>
+      <button type="button" class="tab" role="tab" data-tab="achievements" data-i18n="tab.achievements">Достижения</button>
+      <button type="button" class="tab" role="tab" data-tab="help" data-i18n="tab.help">Справка</button>
+    </nav>
 
-      <label class="toggle-row">
-        <span>3D</span>
-        <input id="use3d" type="checkbox" />
-      </label>
+    <!-- Панель: Объект -->
+    <section class="panel active" data-panel="object" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card">
+          <h3 data-i18n="obj.shape">Фигура</h3>
+          <div id="shapeGrid" class="shape-grid"></div>
+          <div class="row-3">
+            <label class="field"><span>Emoji</span><input id="objEmoji" type="text" maxlength="4" value="🚀" /></label>
+            <label class="field"><span data-i18n="obj.text">Текст</span><input id="objText" type="text" maxlength="24" value="Motion" /></label>
+            <label class="field"><span data-i18n="obj.image">Картинка / SVG</span><input id="objImage" type="file" accept="image/*,.svg" /></label>
+          </div>
+        </div>
 
-      <label class="field speed-field">
-        <span>Скорость: <strong id="speedValue">x1.0</strong></span>
-        <input id="speed" type="range" min="0.5" max="3" step="0.1" value="1" />
-      </label>
+        <div class="card">
+          <h3 data-i18n="obj.props">Свойства</h3>
+          <div class="props-grid">
+            <label class="field"><span data-i18n="obj.color">Цвет</span><input id="objColor" type="color" value="#38BDF8" /></label>
+            <label class="field"><span data-i18n="obj.strokeColor">Цвет обводки</span><input id="objStrokeColor" type="color" value="#ffffff" /></label>
+            <label class="field"><span data-i18n="obj.size">Размер: <b id="objSizeVal">160</b>px</span><input id="objSize" type="range" min="30" max="360" step="2" value="160" /></label>
+            <label class="field"><span data-i18n="obj.opacity">Прозрачность</span><input id="objOpacity" type="range" min="0.1" max="1" step="0.05" value="1" /></label>
+            <label class="field"><span data-i18n="obj.shadow">Тень</span><input id="objShadow" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+            <label class="field"><span data-i18n="obj.glow">Свечение</span><input id="objGlow" type="range" min="0" max="1" step="0.05" value="0" /></label>
+            <label class="field"><span data-i18n="obj.stroke">Обводка</span><input id="objStroke" type="range" min="0" max="16" step="1" value="0" /></label>
+            <label class="field"><span data-i18n="obj.radius">Скругление</span><input id="objRadius" type="range" min="0" max="50" step="1" value="14" /></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="obj.objects">Объекты на сцене</h3>
+          <p class="hint" data-i18n="obj.dragHint">Перетаскивайте объекты мышью прямо на сцене. Активный объект выделен.</p>
+          <div id="objectsList" class="objects-list"></div>
+          <div class="btn-row">
+            <button type="button" id="addObjectBtn" class="secondary" data-i18n="obj.add">+ Добавить</button>
+            <button type="button" id="duplicateObjectBtn" class="secondary" data-i18n="obj.duplicate">Дублировать</button>
+            <button type="button" id="removeObjectBtn" class="secondary" data-i18n="obj.remove">Удалить</button>
+            <button type="button" id="layerUpBtn" class="secondary" title="Слой выше">▲</button>
+            <button type="button" id="layerDownBtn" class="secondary" title="Слой ниже">▼</button>
+            <button type="button" id="resetPosBtn" class="secondary" data-i18n="obj.center">В центр</button>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="animations" aria-label="Анимации">
-      <div class="section-title">
-        <h2>Анимации</h2>
-        <label class="toggle-row combine">
-          <input id="combine" type="checkbox" />
-          <span>Комбинировать: Вращение + Пульс</span>
-        </label>
-      </div>
+    <!-- Панель: Анимации -->
+    <section class="panel" data-panel="animations" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card span-2">
+          <div class="section-title">
+            <h3 data-i18n="anim.title">Анимации активного объекта (можно несколько)</h3>
+            <div class="inline-controls">
+              <input id="animSearch" type="search" data-i18n-placeholder="anim.search" placeholder="Поиск…" />
+              <label class="toggle-row small"><input id="favOnly" type="checkbox" /><span data-i18n="anim.favOnly">Только избранные</span></label>
+              <button type="button" id="clearAnimsBtn" class="ghost" data-i18n="anim.clear">Снять все</button>
+            </div>
+          </div>
+          <div id="animationList" class="animation-list" role="listbox" aria-multiselectable="true" aria-label="Список анимаций"></div>
+        </div>
 
-      <div id="animationList" class="animation-list" role="listbox" aria-label="Список анимаций"></div>
-
-      <div class="buttons">
-        <button id="startBtn" class="primary">Старт</button>
-        <button id="stopBtn" class="secondary">Стоп</button>
+        <div class="card">
+          <h3 data-i18n="anim.motion">Движение</h3>
+          <label class="field">
+            <span data-i18n="anim.speed">Скорость: <strong id="speedValue">x1.0</strong></span>
+            <input id="speed" type="range" min="0.2" max="3" step="0.1" value="1" />
+          </label>
+          <label class="field">
+            <span data-i18n="anim.trajectory">Траектория</span>
+            <select id="trajectorySelect">
+              <option value="none" data-i18n="traj.none">Нет</option>
+              <option value="circle" data-i18n="traj.circle">По кругу</option>
+              <option value="eight" data-i18n="traj.eight">Восьмёрка</option>
+              <option value="custom" data-i18n="traj.custom">Нарисованный путь</option>
+            </select>
+          </label>
+          <div class="btn-row">
+            <button type="button" id="recordPathBtn" class="secondary" data-i18n="anim.recordPath">✍ Нарисовать путь</button>
+            <button type="button" id="clearPathBtn" class="secondary" data-i18n="anim.clearPath">Очистить путь</button>
+          </div>
+          <p class="hint" data-i18n="anim.hint">Подсказка: клавиши 1–9 включают/выключают анимации, Space — старт/стоп, R — случайная сцена.</p>
+        </div>
       </div>
     </section>
 
-    <section class="multiplayer" aria-label="Совместная сессия">
-      <div class="section-title">
-        <h2>Совместная сессия</h2>
-        <p id="sessionBadge" class="session-badge">Не подключено</p>
+    <!-- Панель: 3D -->
+    <section class="panel" data-panel="model" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card">
+          <h3 data-i18n="m3.title">3D-режим</h3>
+          <label class="toggle-row"><input id="use3d" type="checkbox" /><span data-i18n="m3.enable">Показывать 3D-модель вместо 2D-фигуры</span></label>
+          <label class="toggle-row"><input id="webglToggle" type="checkbox" /><span data-i18n="m3.webgl">WebGL (Three.js): свет, тени, реальная геометрия</span></label>
+          <p id="webglStatus" class="hint"></p>
+          <div id="shape3dGrid" class="shape-grid"></div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="m3.camera">Камера и управление</h3>
+          <label class="field"><span data-i18n="m3.zoom">Масштаб: <b id="modelZoomVal">1.0</b></span><input id="modelZoom" type="range" min="0.4" max="2.4" step="0.05" value="1" /></label>
+          <p class="hint" data-i18n="m3.hint">Тяните модель мышью — она продолжит вращение по инерции. Колёсико мыши — масштаб. Пинч на телефоне — тоже масштаб.</p>
+          <div class="btn-row">
+            <button type="button" id="resetCameraBtn" class="secondary" data-i18n="m3.reset">Сбросить камеру</button>
+            <button type="button" id="gyroBtn" class="secondary" data-i18n="m3.gyro">📱 Гироскоп</button>
+          </div>
+          <p id="gyroStatus" class="hint"></p>
+        </div>
+        <div class="card">
+          <h3 data-i18n="m3.toys">Игрушки</h3>
+          <div class="btn-row">
+            <button type="button" id="diceRollBtn" class="secondary" data-i18n="m3.rollDice">🎲 Бросить кость</button>
+            <span id="diceResult" class="dice-result"></span>
+          </div>
+          <div class="btn-row">
+            <button type="button" id="rubikScrambleBtn" class="secondary" data-i18n="m3.scramble">Перемешать кубик</button>
+            <button type="button" id="rubikSolveBtn" class="secondary" data-i18n="m3.solve">Собрать</button>
+          </div>
+          <div id="rubikMoves" class="btn-row rubik-moves">
+            <button type="button" class="secondary" data-move="U">U</button>
+            <button type="button" class="secondary" data-move="D">D</button>
+            <button type="button" class="secondary" data-move="L">L</button>
+            <button type="button" class="secondary" data-move="R">R</button>
+            <button type="button" class="secondary" data-move="F">F</button>
+            <button type="button" class="secondary" data-move="B">B</button>
+          </div>
+          <p class="hint" data-i18n="m3.toysHint">Кость и кубик Рубика доступны как отдельные 3D-фигуры.</p>
+        </div>
       </div>
+    </section>
 
-      <div class="multiplayer-grid">
-        <div class="online-panel">
-          <h3>В сети</h3>
+    <!-- Панель: Сцена -->
+    <section class="panel" data-panel="scene" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card">
+          <h3 data-i18n="scene.look">Оформление</h3>
+          <label class="field">
+            <span data-i18n="scene.theme">Тема</span>
+            <select id="themeSelect">
+              <option value="dark">Dark</option>
+              <option value="neon" selected>Neon</option>
+              <option value="pastel">Pastel</option>
+              <option value="light">Light</option>
+              <option value="cyberpunk">Cyberpunk</option>
+              <option value="ocean">Ocean</option>
+              <option value="forest">Forest</option>
+              <option value="retro">Retro</option>
+            </select>
+          </label>
+          <label class="field">
+            <span data-i18n="scene.cursor">Эффект курсора</span>
+            <select id="cursorFxSelect">
+              <option value="none" data-i18n="cursor.none">Нет</option>
+              <option value="trail" data-i18n="cursor.trail">Шлейф</option>
+              <option value="sparkles" data-i18n="cursor.sparkles">Искры</option>
+              <option value="bubbles" data-i18n="cursor.bubbles">Пузырьки</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="scene.bg">Фон сцены</h3>
+          <div id="bgPresetGrid" class="bg-grid"></div>
+          <div class="row-3">
+            <label class="field"><span data-i18n="scene.bgColor">Цвет</span><input id="bgColor" type="color" value="#0ea5e9" /></label>
+            <label class="field"><span data-i18n="scene.bgImage">Картинка</span><input id="bgImageFile" type="file" accept="image/*" /></label>
+            <label class="field"><span data-i18n="scene.bgVideo">Видео</span><input id="bgVideoFile" type="file" accept="video/*" /></label>
+          </div>
+          <div class="row-url">
+            <input id="bgUrl" type="url" data-i18n-placeholder="scene.bgUrl" placeholder="URL картинки или видео (mp4/webm)" />
+            <button type="button" id="bgUrlBtn" class="secondary" data-i18n="scene.apply">Применить</button>
+          </div>
+          <label class="toggle-row"><input id="parallaxToggle" type="checkbox" /><span data-i18n="scene.parallax">Параллакс при движении мыши</span></label>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="scene.effects">Эффекты и погода</h3>
+          <label class="field">
+            <span data-i18n="scene.effect">Эффект</span>
+            <select id="effectSelect">
+              <option value="none" data-i18n="fx.none">Нет</option>
+              <option value="snow" data-i18n="fx.snow">❄ Снег</option>
+              <option value="rain" data-i18n="fx.rain">🌧 Дождь</option>
+              <option value="leaves" data-i18n="fx.leaves">🍂 Листопад</option>
+              <option value="petals" data-i18n="fx.petals">🌸 Лепестки</option>
+              <option value="fireflies" data-i18n="fx.fireflies">✨ Светлячки</option>
+              <option value="fog" data-i18n="fx.fog">🌫 Туман</option>
+              <option value="confetti" data-i18n="fx.confetti">🎉 Конфетти</option>
+              <option value="stars" data-i18n="fx.stars">🌠 Звездопад</option>
+              <option value="matrix" data-i18n="fx.matrix">💻 Матрица</option>
+            </select>
+          </label>
+          <label class="field"><span data-i18n="scene.intensity">Интенсивность</span><input id="effectIntensity" type="range" min="0.2" max="2.5" step="0.1" value="1" /></label>
+          <label class="toggle-row"><input id="weatherSyncToggle" type="checkbox" /><span data-i18n="scene.weatherSync">Сцена повторяет реальную погоду</span></label>
+          <p id="weatherSyncInfo" class="hint"></p>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="scene.physics">Физика</h3>
+          <label class="toggle-row"><input id="physicsToggle" type="checkbox" /><span data-i18n="scene.physicsOn">Гравитация, отскоки и столкновения объектов</span></label>
+          <label class="field"><span data-i18n="scene.gravity">Гравитация</span><input id="gravity" type="range" min="0" max="3" step="0.1" value="1" /></label>
+          <div class="btn-row">
+            <button type="button" id="kickBtn" class="secondary" data-i18n="scene.kick">💥 Подбросить</button>
+          </div>
+          <p class="hint" data-i18n="scene.physicsHint">Бросайте объекты мышью: скорость броска сохраняется.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Звук и голос -->
+    <section class="panel" data-panel="sound" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card">
+          <h3 data-i18n="sound.title">Звуковые эффекты</h3>
+          <label class="toggle-row"><input id="soundToggle" type="checkbox" checked /><span data-i18n="sound.enable">Звуки интерфейса и событий</span></label>
+          <label class="field"><span data-i18n="sound.volume">Громкость</span><input id="volume" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+          <div class="btn-row">
+            <button type="button" id="soundTestBtn" class="secondary" data-i18n="sound.test">Проверить звук</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="sound.mic">Аудиовизуализация</h3>
+          <p class="hint" data-i18n="sound.micHint">Разрешите доступ к микрофону — объекты будут пульсировать под музыку или голос, а внизу сцены появится эквалайзер.</p>
+          <div class="btn-row">
+            <button type="button" id="micBtn2" class="secondary" data-i18n="sound.micBtn">🎤 Включить микрофон</button>
+          </div>
+          <label class="field"><span data-i18n="sound.sensitivity">Чувствительность</span><input id="micSensitivity" type="range" min="0.5" max="4" step="0.1" value="1.5" /></label>
+          <p id="micStatus" class="hint"></p>
+        </div>
+        <div class="card">
+          <h3 data-i18n="voice.title">Голосовое управление</h3>
+          <p class="hint" data-i18n="voice.hint">Команды: «старт», «стоп», «быстрее», «медленнее», «случайно», «синий», «звезда», «снег», «3D», «тема неон», «полный экран»…</p>
+          <div class="btn-row">
+            <button type="button" id="voiceBtn2" class="secondary" data-i18n="voice.btn">🗣 Слушать</button>
+          </div>
+          <p id="voiceLog" class="hint voice-log"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Сессия -->
+    <section class="panel" data-panel="session" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card">
+          <div class="section-title">
+            <h3 data-i18n="session.title">Совместная сессия</h3>
+            <p id="sessionBadge" class="session-badge" data-i18n="conn.offline">Не подключено</p>
+          </div>
+          <div class="session-info">
+            <div><span data-i18n="session.room">Комната:</span> <b id="sessionRoom">—</b></div>
+            <div><span data-i18n="session.role">Роль:</span> <b id="sessionRole">—</b></div>
+            <div><span data-i18n="session.transport">Транспорт:</span> <b id="sessionTransport">—</b></div>
+          </div>
+          <label class="toggle-row"><input id="followHostToggle" type="checkbox" /><span data-i18n="session.follow">Следовать за ведущим (повторять его сцену)</span></label>
+          <div class="btn-row">
+            <button type="button" id="qrBtn" class="secondary" data-i18n="session.qr">📱 QR-код для входа</button>
+            <button type="button" id="copyLinkBtn" class="secondary" data-i18n="session.copyLink">Скопировать ссылку</button>
+            <button type="button" id="leaveBtn" class="secondary" data-i18n="session.leave">Выйти</button>
+          </div>
+          <h4 data-i18n="session.online">В сети</h4>
           <ul id="onlineUsers" class="online-users"></ul>
         </div>
-        <div class="feed-panel">
-          <h3>Действия участников</h3>
+
+        <div class="card chat-card">
+          <div class="section-title">
+            <h3 data-i18n="chat.title">Чат</h3>
+            <span id="typingIndicator" class="typing"></span>
+          </div>
+          <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+          <div id="emojiBar" class="emoji-bar"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" type="text" maxlength="500" data-i18n-placeholder="chat.ph" placeholder="Сообщение…" autocomplete="off" />
+            <button type="submit" class="primary" data-i18n="chat.send">Отправить</button>
+          </form>
+          <div class="reactions-row">
+            <span data-i18n="chat.reactions">Реакция:</span>
+            <div id="reactionsBar" class="reactions-bar"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="feed.title">Действия участников</h3>
           <div id="activityFeed" class="activity-feed" aria-live="polite"></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="polls.title">Опросы</h3>
+          <div id="pollForm" class="poll-form" hidden>
+            <input id="pollQuestion" type="text" maxlength="160" data-i18n-placeholder="polls.question" placeholder="Вопрос" />
+            <input id="pollOptions" type="text" maxlength="300" data-i18n-placeholder="polls.options" placeholder="Варианты через запятую" />
+            <button type="button" id="createPollBtn" class="secondary" data-i18n="polls.create">Создать опрос</button>
+          </div>
+          <p id="pollHint" class="hint" data-i18n="polls.hostOnly">Опросы создаёт ведущий комнаты.</p>
+          <div id="pollsList" class="polls-list"></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="board.title">Общая доска</h3>
+          <p class="hint" data-i18n="board.hint">Включите режим доски (кнопка «Доска» на сцене или клавиша B) и рисуйте поверх сцены — все участники видят рисунок.</p>
+          <div class="row-3">
+            <label class="field"><span data-i18n="board.color">Цвет</span><input id="boardColor" type="color" value="#ffffff" /></label>
+            <label class="field"><span data-i18n="board.width">Толщина</span><input id="boardWidth" type="range" min="1" max="24" step="1" value="4" /></label>
+            <label class="toggle-row"><input id="boardEraser" type="checkbox" /><span data-i18n="board.eraser">Ластик</span></label>
+          </div>
+          <div class="btn-row">
+            <button type="button" id="boardClearBtn" class="secondary" data-i18n="board.clear">Очистить доску</button>
+          </div>
+        </div>
+
+        <div class="card" id="adminCard" hidden>
+          <h3 data-i18n="admin.title">Панель ведущего</h3>
+          <div class="btn-row">
+            <button type="button" id="freezeBtn" class="secondary" data-i18n="admin.freeze">🧊 Заморозить сцены участников</button>
+            <button type="button" id="pushSceneBtn" class="secondary" data-i18n="admin.push">📤 Применить мою сцену всем</button>
+            <button type="button" id="clearFeedBtn" class="secondary" data-i18n="admin.clearFeed">Очистить ленту</button>
+            <button type="button" id="clearChatBtn" class="secondary" data-i18n="admin.clearChat">Очистить чат</button>
+          </div>
+          <div class="row-url">
+            <input id="announceInput" type="text" maxlength="200" data-i18n-placeholder="admin.announcePh" placeholder="Объявление для всех участников" />
+            <button type="button" id="announceBtn" class="secondary" data-i18n="admin.announce">Объявить</button>
+          </div>
+          <h4 data-i18n="admin.users">Участники</h4>
+          <div id="adminUsers" class="admin-users"></div>
         </div>
       </div>
     </section>
+
+    <!-- Панель: Виджеты -->
+    <section class="panel" data-panel="widgets" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card" id="weatherCard">
+          <div class="section-title">
+            <h3 data-i18n="weather.title">Погода</h3>
+            <div class="inline-controls">
+              <button type="button" id="weatherLocateBtn" class="ghost" data-i18n="weather.locate">📍 Моё место</button>
+              <button type="button" id="weatherRefreshBtn" class="ghost">↻</button>
+            </div>
+          </div>
+          <form id="weatherForm" class="row-url">
+            <input id="weatherCity" type="text" data-i18n-placeholder="weather.cityPh" placeholder="Город, например Москва" />
+            <button type="submit" class="secondary" data-i18n="weather.show">Показать</button>
+          </form>
+          <div id="weatherBody" class="weather-body"><span class="hint" data-i18n="weather.empty">Погода ещё не загружена.</span></div>
+          <div id="weatherForecast" class="weather-forecast"></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="moon.title">Фаза Луны</h3>
+          <div id="moonBody" class="moon-body"></div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">
+            <h3 data-i18n="quote.title">Цитата и факт</h3>
+            <div class="inline-controls">
+              <button type="button" id="quoteBtn" class="ghost" data-i18n="quote.new">Цитата</button>
+              <button type="button" id="factBtn" class="ghost" data-i18n="quote.fact">Факт</button>
+            </div>
+          </div>
+          <blockquote id="quoteText" class="quote">…</blockquote>
+          <p id="quoteAuthor" class="quote-author"></p>
+        </div>
+
+        <div class="card">
+          <div class="section-title">
+            <h3 data-i18n="rates.title">Курсы валют и крипто</h3>
+            <button type="button" id="ratesRefreshBtn" class="ghost">↻</button>
+          </div>
+          <div id="ratesTable" class="rates-table"><span class="hint">…</span></div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="tz.title">Время участников</h3>
+          <div id="tzList" class="tz-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Достижения -->
+    <section class="panel" data-panel="achievements" role="tabpanel">
+      <div class="card">
+        <div class="section-title">
+          <h3 data-i18n="ach.title">Достижения</h3>
+          <span id="achievementsProgress" class="chip">0 / 0</span>
+        </div>
+        <div id="achievementsGrid" class="achievements-grid"></div>
+      </div>
+    </section>
+
+    <!-- Панель: Справка -->
+    <section class="panel" data-panel="help" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card span-2" id="helpContent"></div>
+        <div class="card">
+          <h3 data-i18n="hotkeys.title">Горячие клавиши</h3>
+          <table id="hotkeysTable" class="hotkeys-table"></table>
+        </div>
+        <div class="card span-3">
+          <div class="section-title">
+            <h3 data-i18n="quiz.title">Квиз по анимациям</h3>
+            <span id="quizBest" class="chip"></span>
+          </div>
+          <div id="quizArea"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Motion Playground v2.0 · <span data-i18n="footer.text">web-версия учебного MAUI-приложения</span></span>
+      <button type="button" id="installBtn" class="ghost" hidden data-i18n="footer.install">Установить как приложение</button>
+    </footer>
   </main>
 
-  <script src="app.js"></script>
-  <script src="multiplayer.js"></script>
+  <!-- Командная палитра -->
+  <div id="paletteModal" class="modal" hidden>
+    <div class="modal-card palette">
+      <input id="paletteInput" type="text" data-i18n-placeholder="palette.ph" placeholder="Введите команду…" autocomplete="off" />
+      <ul id="paletteList" class="palette-list" role="listbox"></ul>
+    </div>
+  </div>
+
+  <!-- Справка по клавишам -->
+  <div id="helpOverlay" class="modal" hidden>
+    <div class="modal-card">
+      <div class="section-title">
+        <h3 data-i18n="hotkeys.title">Горячие клавиши</h3>
+        <button type="button" class="icon-btn" data-close-modal aria-label="Закрыть">✕</button>
+      </div>
+      <table id="hotkeysTableOverlay" class="hotkeys-table"></table>
+    </div>
+  </div>
+
+  <!-- QR-код -->
+  <div id="qrModal" class="modal" hidden>
+    <div class="modal-card qr-card">
+      <div class="section-title">
+        <h3 data-i18n="session.qrTitle">Подключение с телефона</h3>
+        <button type="button" class="icon-btn" data-close-modal aria-label="Закрыть">✕</button>
+      </div>
+      <canvas id="qrCanvas" width="264" height="264"></canvas>
+      <p id="qrUrl" class="qr-url"></p>
+      <p class="hint" data-i18n="session.qrHint">Телефон должен быть в той же Wi‑Fi сети, что и компьютер с сервером.</p>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

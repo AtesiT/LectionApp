@@ -16,7 +16,8 @@ export const DEFAULT_OBJECT = Object.freeze({
   radius: 14,           // % — скругление углов квадрата
   emoji: '🚀',
   text: 'Motion',
-  image: null,          // data URL (не синхронизируется — слишком большой)
+  image: null,          // сжатый data URL картинки (передаётся участникам, если хватает бюджета)
+  video: null,          // { provider: 'youtube'|'rutube'|'vk'|'file', id, src } — ссылка или сжатый файл
   x: 0,                 // смещение от центра сцены, px
   y: 0,
   animations: ['pulse'],
@@ -36,7 +37,7 @@ export const DEFAULT_STATE = Object.freeze({
   modelZoom: 1,
   activeObjectId: null,
   objects: [],
-  background: { type: 'preset', value: 'auto', parallax: false },
+  background: { type: 'preset', value: 'auto', parallax: false, provider: null },
   effect: 'none',
   effectIntensity: 1,
   physics: false,
@@ -208,6 +209,10 @@ export function redo() {
 export function canUndo() { return history.undo.length > 0; }
 export function canRedo() { return history.redo.length > 0; }
 
+// Сколько байт медиа (картинки и видео объектов/фона) уезжает другим участникам.
+// Больше — нельзя: сервер ограничивает размер состояния, а лента должна летать быстро.
+export const MEDIA_SYNC_BUDGET = 120_000;
+
 /** Состояние для отправки другим участникам (без локальных и тяжёлых полей). */
 export function syncableState(source = state) {
   const out = {};
@@ -215,14 +220,31 @@ export function syncableState(source = state) {
     if (LOCAL_ONLY_KEYS.has(key)) continue;
     out[key] = value;
   }
-  out.objects = (source.objects || []).map((o) => ({
-    ...o,
-    image: o.image ? 'has-image' : null,
-    customPath: (o.customPath || []).slice(0, 200),
-  }));
+  let budget = MEDIA_SYNC_BUDGET;
+  const spend = (value) => {
+    const bytes = String(value || '').length;
+    if (bytes > budget) return false;
+    budget -= bytes;
+    return true;
+  };
+  out.objects = (source.objects || []).map((o) => {
+    const copy = { ...o, customPath: (o.customPath || []).slice(0, 200) };
+    // Картинки и видео уезжают, только если это компактный data URL или внешняя ссылка.
+    copy.image = o.image && spend(o.image) ? o.image : (o.image ? 'has-image' : null);
+    if (o.video) {
+      const ok = typeof o.video.src === 'string' && spend(o.video.src);
+      copy.video = ok ? o.video : { provider: o.video.provider, id: o.video.id || '', src: 'local-media', local: true };
+    }
+    return copy;
+  });
   if (out.background?.type === 'image' || out.background?.type === 'video') {
-    const isData = String(out.background.value || '').startsWith('data:') || String(out.background.value || '').startsWith('blob:');
-    out.background = { ...out.background, value: isData ? 'local-media' : out.background.value };
+    const value = String(out.background.value || '');
+    const local = value.startsWith('data:') || value.startsWith('blob:');
+    const keep = out.background.type === 'video' && out.background.provider && out.background.provider !== 'file'
+      ? value                                        // ссылка на YouTube/Rutube — лёгкая
+      : (local ? (spend(value) ? value : 'local-media') : value);
+    out.background = { ...out.background, value: keep };
+    if (keep !== value) out.background.local = true;
   }
   return out;
 }

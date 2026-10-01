@@ -30,6 +30,12 @@ const ACHIEVEMENTS = [
   { id: 'effects', icon: '❄️', ru: ['Метеоролог', 'Попробовать 5 эффектов сцены'], en: ['Meteorologist', 'Try 5 scene effects'] },
   { id: 'weather', icon: '🌦', ru: ['Синхронизация', 'Связать сцену с погодой'], en: ['In sync', 'Link the scene with the weather'] },
   { id: 'bg_upload', icon: '🖼', ru: ['Декоратор', 'Загрузить свой фон'], en: ['Decorator', 'Upload a custom background'] },
+  { id: 'video_bg', icon: '🎬', ru: ['Киномеханик', 'Поставить видео фоном сцены'], en: ['Projectionist', 'Put a video on the stage background'] },
+  { id: 'video_obj', icon: '📺', ru: ['Телеведущий', 'Добавить объект-видео или картинку'], en: ['TV host', 'Add a video or image object'] },
+  { id: 'peek', icon: '👁', ru: ['Наблюдатель', 'Посмотреть сцену другого участника'], en: ['Observer', 'Peek at another participant\u2019s scene'] },
+  { id: 'board_record', icon: '🎞', ru: ['Режиссёр', 'Записать рисование на доске'], en: ['Director', 'Record the board drawing'] },
+  { id: 'board_shot', icon: '📷', ru: ['Фотограф', 'Сохранить скриншот сцены'], en: ['Photographer', 'Save a screenshot of the stage'] },
+  { id: 'weather_backup', icon: '🛰', ru: ['Запасной канал', 'Получить погоду не с первого источника'], en: ['Backup channel', 'Get weather from a fallback source'] },
   { id: 'chat10', icon: '💬', ru: ['Болтун', 'Отправить 10 сообщений'], en: ['Chatterbox', 'Send 10 messages'] },
   { id: 'reactions', icon: '🎉', ru: ['Эмоции', 'Отправить 10 реакций'], en: ['Emotions', 'Send 10 reactions'] },
   { id: 'like_given', icon: '👍', ru: ['Щедрость', 'Поставить лайк'], en: ['Generosity', 'Give a like'] },
@@ -142,6 +148,8 @@ export function init() {
     if (s.theme) seen('themes', s.theme, 8, 'themes');
     if (s.effect && s.effect !== 'none') seen('effects', s.effect, 5, 'effects');
     if (s.background?.type === 'image' || s.background?.type === 'video') unlock('bg_upload');
+    if (s.background?.type === 'video') unlock('video_bg');
+    if (s.objects.some((o) => o.shape === 'video' || (o.shape === 'image' && o.image))) unlock('video_obj');
     if (s.objects.length >= 5) unlock('objects5');
     if (s.objects.length >= 12) unlock('objects12');
     const active = s.objects.find((o) => o.id === s.activeObjectId) || s.objects[0];
@@ -172,6 +180,10 @@ export function init() {
   on('poll:created', () => unlock('poll'));
   on('poll:voted', () => unlock('vote'));
   on('board:stroke', () => unlock('board'));
+  on('board:recorded', () => unlock('board_record'));
+  on('board:screenshot', () => unlock('board_shot'));
+  on('peek:opened', () => unlock('peek'));
+  on('weather:fallback', () => unlock('weather_backup'));
   on('mic:on', () => unlock('mic'));
   on('voice:command', () => unlock('voice'));
   on('palette:open', () => unlock('palette'));

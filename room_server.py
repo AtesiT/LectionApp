@@ -20,8 +20,10 @@ import random
 import socket
 import string
 import struct
+import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -720,6 +722,228 @@ def fetch_fact(lang: str) -> dict:
     return {"ok": True, "source": "offline", "text": random.choice(FALLBACK_FACTS[lang])}
 
 
+# --- Коды погоды WMO, к которым мы приводим ответы всех источников -------
+
+METNO_SYMBOLS = {
+    "clearsky": 0, "fair": 1, "partlycloudy": 2, "cloudy": 3, "fog": 45,
+    "lightrain": 61, "rain": 63, "heavyrain": 65, "lightsleet": 66, "sleet": 66,
+    "heavysleet": 67, "lightsnow": 71, "snow": 73, "heavysnow": 75,
+    "lightrainshowers": 80, "rainshowers": 80, "heavyrainshowers": 81,
+    "lightsnowshowers": 85, "snowshowers": 85, "heavysnowshowers": 86,
+    "lightrainandthunder": 95, "rainandthunder": 95, "heavyrainandthunder": 95,
+    "snowandthunder": 95, "sleetandthunder": 95, "thunder": 95,
+}
+
+WTTR_KEYWORDS = [
+    ("thunder", 95), ("blizzard", 75), ("hail", 96), ("sleet", 67),
+    ("torrential rain", 82), ("heavy snow", 75), ("heavy rain", 65),
+    ("moderate snow", 73), ("moderate rain", 63), ("patchy snow", 71),
+    ("patchy rain", 61), ("light snow", 71), ("light rain", 61),
+    ("drizzle", 51), ("shower", 80), ("snow showers", 85), ("snow", 73),
+    ("rain", 63), ("mist", 45), ("fog", 45), ("haze", 45), ("overcast", 3),
+    ("cloudy", 3), ("partly cloudy", 2), ("sunny", 0), ("clear", 0),
+]
+
+
+def metno_code(symbol: str) -> int:
+    """Код погоды met.no (symbol_code) → код WMO."""
+    symbol = (symbol or "").lower()
+    if not symbol:
+        return 3
+    if "thunder" in symbol:
+        return 95
+    base = symbol.split("_")[0]
+    return METNO_SYMBOLS.get(base, METNO_SYMBOLS.get(symbol, 3))
+
+
+def wttr_code(text: str) -> int:
+    """Текстовое описание wttr.in → код WMO."""
+    low = (text or "").lower()
+    for word, code in WTTR_KEYWORDS:
+        if word in low:
+            return code
+    return 3
+
+
+def _daily_from_metno(timeseries: list) -> list:
+    """Суточный прогноз из почасового ряда met.no."""
+    days: dict[str, dict] = {}
+    for row in timeseries:
+        when = row.get("time", "")[:10]
+        if not when:
+            continue
+        temp = row.get("data", {}).get("instant", {}).get("details", {}).get("air_temperature")
+        if temp is None:
+            continue
+        day = days.setdefault(when, {"date": when, "code": 3, "max": -100.0, "min": 100.0})
+        day["max"] = max(day["max"], temp)
+        day["min"] = min(day["min"], temp)
+        symbol = (row.get("data", {}).get("next_6_hours", {}) or {}).get("summary", {}).get("symbol_code")
+        if symbol and day["code"] == 3:
+            day["code"] = metno_code(symbol)
+    out = []
+    for day in sorted(days.values(), key=lambda d: d["date"])[:5]:
+        out.append({"date": day["date"], "code": day["code"],
+                    "max": round(day["max"]), "min": round(day["min"])})
+    return out
+
+
+def weather_open_meteo(lat: float, lon: float, place: str, lang: str) -> dict:
+    params = urllib.parse.urlencode({
+        "latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}",
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,is_day,"
+                   "precipitation,weather_code,wind_speed_10m",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min",
+        "timezone": "auto", "forecast_days": "5",
+    })
+    data = http_get_json(f"https://api.open-meteo.com/v1/forecast?{params}", timeout=6)
+    c = data["current"]
+    return {
+        "place": place or f"{lat:.2f}, {lon:.2f}",
+        "temp": round(c["temperature_2m"]),
+        "feels": round(c["apparent_temperature"]),
+        "humidity": round(c["relative_humidity_2m"]),
+        "wind": round(c["wind_speed_10m"]),
+        "code": int(c["weather_code"]),
+        "isDay": c.get("is_day") == 1,
+        "daily": [{"date": d, "code": int(data["daily"]["weather_code"][i]),
+                   "max": round(data["daily"]["temperature_2m_max"][i]),
+                   "min": round(data["daily"]["temperature_2m_min"][i])}
+                  for i, d in enumerate(data["daily"]["time"][:5])],
+    }
+
+
+def weather_metno(lat: float, lon: float, place: str) -> dict:
+    """api.met.no — бесплатный прогноз Норвежского метеоинститута (нужен User-Agent)."""
+    params = urllib.parse.urlencode({"lat": f"{lat:.4f}", "lon": f"{lon:.4f}"})
+    data = http_get_json(f"https://api.met.no/weatherapi/locationforecast/2.0/compact?{params}", timeout=8)
+    rows = data["properties"]["timeseries"]
+    if not rows:
+        raise ValueError("empty_metno")
+    now = rows[0]
+    details = now["data"]["instant"]["details"]
+    symbol = (now["data"].get("next_1_hours") or now["data"].get("next_6_hours") or {}).get(
+        "summary", {}).get("symbol_code", "cloudy")
+    return {
+        "place": place or f"{lat:.2f}, {lon:.2f}",
+        "temp": round(details.get("air_temperature", 0)),
+        "feels": round(details.get("air_temperature", 0)),
+        "humidity": round(details.get("relative_humidity", 0)),
+        "wind": round((details.get("wind_speed", 0) or 0) * 3.6),   # м/с → км/ч
+        "code": metno_code(symbol),
+        "isDay": "day" in symbol or "fair" in symbol or "clearsky" in symbol,
+        "daily": _daily_from_metno(rows),
+    }
+
+
+def weather_wttr(lat: float, lon: float, place: str, city: str) -> dict:
+    """wttr.in — ещё один бесплатный источник без ключа; работает и по названию города."""
+    target = urllib.parse.quote(city) if city else f"{lat:.4f},{lon:.4f}"
+    data = http_get_json(f"https://wttr.in/{target}?format=j1&lang=en", timeout=8)
+    cur = (data.get("current_condition") or [{}])[0]
+    if not cur:
+        raise ValueError("empty_wttr")
+    desc = ((cur.get("weatherDesc") or [{}])[0]).get("value", "")
+    area = ((data.get("nearest_area") or [{}])[0])
+    area_name = ((area.get("areaName") or [{}])[0]).get("value", "")
+    country = ((area.get("country") or [{}])[0]).get("value", "")
+    hour = 12
+    match = re.search(r"(\d{2}):(\d{2})", str(cur.get("localObsDateTime", "")))
+    if match:
+        hour = int(match.group(1))
+    daily = []
+    for day in (data.get("weather") or [])[:5]:
+        hourly = day.get("hourly") or []
+        mid = hourly[4] if len(hourly) > 4 else (hourly[0] if hourly else {})
+        mid_desc = ((mid.get("weatherDesc") or [{}])[0]).get("value", "")
+        daily.append({
+            "date": day.get("date", ""),
+            "code": wttr_code(mid_desc or desc),
+            "max": round(float(day.get("maxtempC", 0))),
+            "min": round(float(day.get("mintempC", 0))),
+        })
+    return {
+        "place": place or ", ".join(x for x in (area_name, country) if x) or f"{lat:.2f}, {lon:.2f}",
+        "temp": round(float(cur.get("temp_C", 0))),
+        "feels": round(float(cur.get("FeelsLikeC", cur.get("temp_C", 0)))),
+        "humidity": round(float(cur.get("humidity", 0))),
+        "wind": round(float(cur.get("windspeedKmph", 0))),
+        "code": wttr_code(desc),
+        "isDay": 6 <= hour < 21,
+        "daily": daily,
+    }
+
+
+def geocode(query: str, lang: str) -> tuple[float, float, str]:
+    """Координаты города: сначала Open-Meteo, потом Nominatim (OpenStreetMap)."""
+    try:
+        params = urllib.parse.urlencode({"name": query, "count": 1, "language": lang, "format": "json"})
+        data = http_get_json(f"https://geocoding-api.open-meteo.com/v1/search?{params}", timeout=6)
+        hit = (data.get("results") or [])[0]
+        place = ", ".join(x for x in (hit.get("name"), hit.get("country_code")) if x)
+        return float(hit["latitude"]), float(hit["longitude"]), place
+    except Exception:  # noqa: BLE001
+        pass
+    params = urllib.parse.urlencode({"q": query, "format": "json", "limit": 1, "accept-language": lang})
+    data = http_get_json(f"https://nominatim.openstreetmap.org/search?{params}", timeout=8)
+    hit = data[0]
+    name = (hit.get("display_name") or "").split(",")[0]
+    return float(hit["lat"]), float(hit["lon"]), name
+
+
+def fetch_weather(query: dict) -> dict:
+    """Погода с каскадом источников: Open-Meteo → met.no → wttr.in.
+
+    Если геокодеры недоступны, координаты могут остаться неизвестными — тогда
+    wttr.in спрашиваем сразу по названию города (ему координаты не нужны).
+    """
+    lang = "ru" if query.get("lang", ["ru"])[0] == "ru" else "en"
+    city = (query.get("q") or [""])[0].strip()
+    lat_raw = (query.get("lat") or [""])[0]
+    lon_raw = (query.get("lon") or [""])[0]
+    place = (query.get("place") or [""])[0].strip()
+    lat = lon = None
+    try:
+        lat, lon = float(lat_raw), float(lon_raw)
+    except (TypeError, ValueError):
+        lat = lon = None
+    errors: list[str] = []
+    if lat is None and city:
+        try:
+            lat, lon, place = geocode(city, lang)
+        except Exception as exc:  # noqa: BLE001 — координаты не обязательны, есть wttr.in
+            errors.append(f"geocode: {type(exc).__name__}")
+    if lat is None and not city:
+        return {"ok": False, "error": "bad_request"}
+
+    key = "city:" + city.lower() if lat is None else f"{lat:.3f},{lon:.3f}"
+    cached = ext_cache.get(f"weather:{key}")
+    if cached and time.time() - cached[0] < 600:
+        payload = dict(cached[1])
+        payload["cached"] = True
+        return payload
+
+    if lat is not None:
+        sources = [
+            ("open-meteo", lambda: weather_open_meteo(lat, lon, place, lang)),
+            ("met.no", lambda: weather_metno(lat, lon, place)),
+            ("wttr.in", lambda: weather_wttr(lat, lon, place, city)),
+        ]
+    else:
+        sources = [("wttr.in", lambda: weather_wttr(0.0, 0.0, place, city))]
+
+    for name, call in sources:
+        try:
+            payload = call()
+            payload.update({"ok": True, "source": name, "place": payload.get("place") or place or city,
+                            "updated": now_ms(), "lat": lat, "lon": lon})
+            ext_cache[f"weather:{key}"] = (time.time(), payload)
+            return payload
+        except Exception as exc:  # noqa: BLE001 — пробуем следующий источник
+            errors.append(f"{name}: {type(exc).__name__}")
+    return {"ok": False, "error": "offline", "tried": errors}
+
+
 def fetch_rates() -> dict:
     cached = ext_cache.get("rates")
     if cached and time.time() - cached[0] < 600:
@@ -854,6 +1078,9 @@ class RoomHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/ext/rates":
             self._json_response(fetch_rates())
+            return
+        if path == "/api/ext/weather":
+            self._json_response(fetch_weather(query))
             return
         if path == "/":
             self.path = "/index.html"

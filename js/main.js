@@ -25,6 +25,7 @@ import * as panels from './ui/panels.js';
 import * as view from './ui/view.js';
 import * as shortcuts from './ui/shortcuts.js';
 import * as palette from './ui/palette.js';
+import * as peek from './ui/peek.js';
 
 import * as audio from './features/audio.js';
 import * as voice from './features/voice.js';
@@ -104,6 +105,7 @@ function boot() {
 
   // Панели и вид
   panels.init();
+  peek.init();
   view.init();
   shortcuts.init();
   palette.init();

@@ -7,6 +7,10 @@ import { toast } from '../ui/toast.js';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search';
+// Запасной путь — прокси на нашем сервере: он сам перебирает источники
+// (Open-Meteo → met.no → wttr.in) и присылает уже приведённый к WMO ответ.
+const PROXY_URL = '/api/ext/weather';
+const DIRECT_TIMEOUT = 6000;
 
 let current = null;   // { place, temp, feels, humidity, wind, code, isDay, daily: [...] }
 let refreshTimer = null;
@@ -27,6 +31,7 @@ export function init() {
   on('lang', () => render());
   if (saved?.lat) {
     $('#weatherCity').value = saved.place || '';
+    if (saved.temp !== undefined) applyPayload({ ...saved, source: 'cache', cached: true });
     loadByCoords(saved.lat, saved.lon, saved.place);
   } else {
     loadByCity(getLang() === 'ru' ? 'Москва' : 'London', true);
@@ -50,34 +55,44 @@ function locate() {
 
 async function loadByCity(city, silent = false) {
   setBody(t('weather.loading'));
+  // 1) геокодер Open-Meteo напрямую из браузера; 2) если недоступен — геокодер на сервере
   try {
     const url = `${GEO_URL}?name=${encodeURIComponent(city)}&count=1&language=${getLang()}&format=json`;
-    const res = await fetch(url);
-    const data = await res.json();
+    const data = await fetchJson(url, DIRECT_TIMEOUT);
     const hit = data?.results?.[0];
     if (!hit) throw new Error('not found');
     const place = [hit.name, hit.country_code].filter(Boolean).join(', ');
     await loadByCoords(hit.latitude, hit.longitude, place);
+    return;
   } catch (err) {
-    console.warn('geocode failed', err);
-    if (!silent) toast(t('weather.cityFail'), { type: 'warn' });
-    setBody(t('weather.fail'));
+    console.warn('geocode failed, using server proxy', err);
   }
+  try {
+    const data = await fetchJson(`${PROXY_URL}?q=${encodeURIComponent(city)}&lang=${getLang()}`, 15000);
+    if (!data?.ok) throw new Error(data?.error || 'proxy failed');
+    emit('weather:fallback', data.source);
+    applyPayload(data);
+    return;
+  } catch (err) {
+    console.warn('weather proxy failed', err);
+  }
+  if (!silent) toast(t('weather.allFail'), { type: 'warn' });
+  setBody(saved?.temp !== undefined ? renderSaved() : t('weather.fail'));
 }
 
 async function loadByCoords(lat, lon, place = '') {
+  setBody(t('weather.loading'));
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4), longitude: lon.toFixed(4),
+    current: 'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+    timezone: 'auto', forecast_days: '5',
+  });
   try {
-    const params = new URLSearchParams({
-      latitude: lat.toFixed(4), longitude: lon.toFixed(4),
-      current: 'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m',
-      daily: 'weather_code,temperature_2m_max,temperature_2m_min',
-      timezone: 'auto', forecast_days: '5',
-    });
-    const res = await fetch(`${FORECAST_URL}?${params}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchJson(`${FORECAST_URL}?${params}`, DIRECT_TIMEOUT);
     const c = data.current;
-    current = {
+    applyPayload({
+      ok: true, source: 'open-meteo',
       place: place || `${lat.toFixed(2)}, ${lon.toFixed(2)}`,
       temp: Math.round(c.temperature_2m),
       feels: Math.round(c.apparent_temperature),
@@ -88,18 +103,72 @@ async function loadByCoords(lat, lon, place = '') {
       daily: (data.daily?.time || []).map((day, i) => ({
         date: day, code: data.daily.weather_code[i], max: Math.round(data.daily.temperature_2m_max[i]), min: Math.round(data.daily.temperature_2m_min[i]),
       })),
-      updated: Date.now(),
-    };
-    saved = { lat, lon, place: current.place };
-    saveJSON('mp2:weather', saved);
-    render();
-    emit('weather:loaded', current);
-    if (state.weatherSync) applyToScene(false);
+    });
+    return;
   } catch (err) {
-    console.warn('weather failed', err);
-    setBody(t('weather.fail'));
-    const chip = $('#weatherChip');
-    if (chip) chip.textContent = '🌤 —';
+    console.warn('open-meteo unavailable, asking server', err);
+  }
+  // Прямой запрос не прошёл (блокировка, нет интернета, старый TLS) — пробуем серверный каскад.
+  try {
+    const q = `${PROXY_URL}?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&place=${encodeURIComponent(place)}&lang=${getLang()}`;
+    const data = await fetchJson(q, 20000);
+    if (!data?.ok) throw new Error(data?.error || 'proxy failed');
+    emit('weather:fallback', data.source);
+    applyPayload(data);
+    return;
+  } catch (err) {
+    console.warn('weather proxy failed', err);
+  }
+  if (saved && saved.temp !== undefined) {
+    applyPayload({ ...saved, source: 'cache', cached: true, lat, lon });
+    toast(t('weather.cached'), { type: 'warn' });
+    return;
+  }
+  setBody(t('weather.fail'));
+  const chip = $('#weatherChip');
+  if (chip) chip.textContent = '🌤 —';
+}
+
+/** Кладёт приведённые данные в состояние и обновляет виджет. */
+function applyPayload(data) {
+  current = {
+    place: data.place || `${Number(data.lat ?? 0).toFixed(2)}, ${Number(data.lon ?? 0).toFixed(2)}`,
+    temp: Math.round(data.temp),
+    feels: Math.round(data.feels ?? data.temp),
+    humidity: Math.round(data.humidity ?? 0),
+    wind: Math.round(data.wind ?? 0),
+    code: Number(data.code ?? 3),
+    isDay: Boolean(data.isDay),
+    daily: (data.daily || []).slice(0, 5).map((d) => ({ date: d.date, code: Number(d.code), max: Math.round(d.max), min: Math.round(d.min) })),
+    source: data.source || 'open-meteo',
+    cached: Boolean(data.cached),
+    updated: Date.now(),
+  };
+  saved = { lat: Number(data.lat ?? saved?.lat ?? 0), lon: Number(data.lon ?? saved?.lon ?? 0), place: current.place, temp: current.temp, code: current.code, isDay: current.isDay, wind: current.wind, humidity: current.humidity, daily: current.daily };
+  saveJSON('mp2:weather', saved);
+  render();
+  emit('weather:loaded', current);
+  if (state.weatherSync) applyToScene(false);
+}
+
+function renderSaved() {
+  if (saved && saved.temp !== undefined) {
+    applyPayload({ ...saved, source: 'cache', cached: true });
+    return t('weather.cached');
+  }
+  return t('weather.fail');
+}
+
+/** fetch с таймаутом: долгий источник не должен подвешивать виджет. */
+async function fetchJson(url, timeout = DIRECT_TIMEOUT) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+  try {
+    const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -160,6 +229,11 @@ function render() {
   }
   const info = $('#weatherSyncInfo');
   if (info && state.weatherSync) info.textContent = t('scene.weatherSyncInfo', { desc: describeCode(current.code), temp: current.temp, effect: effectFor(current).effect });
+  const src = $('#weatherSource');
+  if (src) {
+    const name = current.source === 'cache' ? t('weather.cached') : t('weather.source', { source: current.source || 'open-meteo' });
+    src.textContent = current.cached ? `${name} (${t('weather.cached')})` : name;
+  }
 }
 
 /** Подбор эффекта сцены по погоде. */

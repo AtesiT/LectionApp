@@ -39,7 +39,7 @@ await import(pathToFileURL(path.join(root, 'js/main.js')).href);
 await sleep(300);
 check('приложение загрузилось (body.ready)', document.body.classList.contains('ready'));
 check('i18n применён (заголовок входа)', $('#entryTitle').textContent.includes('Motion Playground'));
-check('сетка фигур построена', document.querySelectorAll('#shapeGrid .shape-btn').length === 10);
+check('сетка фигур построена (10 + видео)', document.querySelectorAll('#shapeGrid .shape-btn').length === 11);
 check('список анимаций построен', document.querySelectorAll('#animationList .anim-card').length === 20);
 check('3D-фигуры построены', document.querySelectorAll('#shape3dGrid .shape-btn').length === 9);
 check('пресеты фона', document.querySelectorAll('#bgPresetGrid .bg-btn').length === 10);
@@ -91,6 +91,11 @@ check('текстовая фигура', store.activeObject().shape === 'text');
 click('#shapeGrid .shape-btn[data-shape="heart"]');
 click('#addObjectBtn');
 check('объект добавлен', store.state.objects.length === 2);
+input('#objVideoUrl', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'); click('#objVideoUrlBtn');
+check('объект-видео с YouTube', store.activeObject().shape === 'video' && store.activeObject().video?.provider === 'youtube');
+check('объект-видео отрисован плеером', !!$('#objectsLayer .obj.active iframe') || !!$('#objectsLayer .shape-video'));
+input('#objVideoUrl', 'https://rutube.ru/video/3f8c1e2b9a7d5c4e6f0a1b2c3d4e5f6a/'); click('#objVideoUrlBtn');
+check('объект-видео с Rutube', store.activeObject().video?.provider === 'rutube');
 click('#duplicateObjectBtn');
 check('объект продублирован', store.state.objects.length === 3);
 check('список объектов', document.querySelectorAll('#objectsList .object-item').length === 3);
@@ -189,7 +194,13 @@ check('фон aurora', store.state.background.value === 'aurora');
 change('#bgColor', '#123456');
 check('фон цвет', store.state.background.type === 'color');
 input('#bgUrl', 'https://example.com/video.mp4'); click('#bgUrlBtn');
-check('фон видео по URL', store.state.background.type === 'video');
+check('фон видео по URL', store.state.background.type === 'video' && store.state.background.provider === 'file');
+input('#bgUrl', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'); click('#bgUrlBtn');
+check('фон: YouTube вставляется плеером', store.state.background.provider === 'youtube' && $('#stageVideoFrame').src.includes('youtube-nocookie'));
+input('#bgUrl', 'https://rutube.ru/video/3f8c1e2b9a7d5c4e6f0a1b2c3d4e5f6a/'); click('#bgUrlBtn');
+check('фон: Rutube вставляется плеером', store.state.background.provider === 'rutube' && $('#stageVideoFrame').src.includes('rutube.ru/play/embed'));
+input('#bgUrl', 'https://example.com/pic.png'); click('#bgUrlBtn');
+check('фон: картинка по URL', store.state.background.type === 'image');
 click('#bgPresetGrid .bg-btn[data-bg="auto"]');
 change('#parallaxToggle', true);
 check('параллакс', store.state.background.parallax === true);
@@ -209,6 +220,19 @@ change('#gravity', '2');
 click('#kickBtn');
 await sleep(400);
 change('#physicsToggle', false);
+
+check('кнопки доски на месте', !!$('#boardRecBtn') && !!$('#boardShotBtn') && !!$('#boardReplayBtn'));
+click('#boardShotBtn');   // canvas в мини-DOM есть, но без 2D-контекста — ждём предупреждение, не ошибку
+click('#boardReplayBtn'); // пустая доска → предупреждение
+
+// --- Просмотр сцены участника ---------------------------------------------------------------
+click('#usersShowcase .user-model-card .peek-btn');
+check('просмотр чужой сцены открылся', $('#peekModal').hidden === false);
+check('в просмотре есть объекты', $('#peekObjects').children.length >= 1);
+click('#peekModal [data-close-modal]');
+check('просмотр закрылся', $('#peekModal').hidden === true);
+key('l'); key('l');
+check('после смены языка окно просмотра не открывается само', $('#peekModal').hidden === true);
 
 // --- Звук / голос ---------------------------------------------------------------------------
 click('.tab[data-tab="sound"]');

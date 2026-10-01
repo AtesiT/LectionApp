@@ -90,7 +90,13 @@
       <div class="stage-layout">
         <div id="stage" class="stage" tabindex="0">
           <div id="stageBg" class="stage-bg" aria-hidden="true"></div>
-          <video id="stageVideo" class="stage-video hidden" autoplay muted loop playsinline aria-hidden="true"></video>
+          <div id="stageVideoWrap" class="stage-video hidden" aria-hidden="true">
+            <video id="stageVideo" class="stage-video-file hidden" autoplay muted loop playsinline preload="auto"></video>
+            <iframe id="stageVideoFrame" class="stage-video-frame hidden" title="Видео на фоне сцены"
+                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen
+                    referrerpolicy="strict-origin-when-cross-origin" loading="lazy"></iframe>
+            <p id="stageVideoNote" class="stage-video-note hidden"></p>
+          </div>
           <div class="glow" aria-hidden="true"></div>
           <div id="weatherOverlay" class="weather-overlay" aria-hidden="true"></div>
           <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
@@ -156,6 +162,12 @@
             <label class="field"><span data-i18n="obj.text">Текст</span><input id="objText" type="text" maxlength="24" value="Motion" /></label>
             <label class="field"><span data-i18n="obj.image">Картинка / SVG</span><input id="objImage" type="file" accept="image/*,.svg" /></label>
           </div>
+          <div class="row-3">
+            <label class="field"><span data-i18n="obj.videoFile">Видео-файл</span><input id="objVideoFile" type="file" accept="video/*" /></label>
+            <label class="field"><span data-i18n="obj.videoUrl">Ссылка на видео</span><input id="objVideoUrl" type="url" data-i18n-placeholder="obj.videoUrlPh" placeholder="YouTube / Rutube / VK / mp4" /></label>
+            <button type="button" id="objVideoUrlBtn" class="secondary" data-i18n="obj.videoApply">Поставить видео</button>
+          </div>
+          <p class="hint" data-i18n="obj.mediaHint">Картинки сжимаются и уезжают участникам целиком. Видео с YouTube, Rutube и VK видно всем по ссылке, файл больше 120 КБ — только у вас.</p>
         </div>
 
         <div class="card">
@@ -308,9 +320,10 @@
             <label class="field"><span data-i18n="scene.bgVideo">Видео</span><input id="bgVideoFile" type="file" accept="video/*" /></label>
           </div>
           <div class="row-url">
-            <input id="bgUrl" type="url" data-i18n-placeholder="scene.bgUrl" placeholder="URL картинки или видео (mp4/webm)" />
+            <input id="bgUrl" type="url" data-i18n-placeholder="scene.bgUrl" placeholder="Ссылка: YouTube, Rutube, VK, картинка или mp4" />
             <button type="button" id="bgUrlBtn" class="secondary" data-i18n="scene.apply">Применить</button>
           </div>
+          <p class="hint" data-i18n="scene.videoHint">Видео с YouTube, Rutube и VK вставляется плеером и видно всем участникам. Свой файл mp4/webm до 120 КБ тоже отправится в комнату, больший — останется локальным фоном.</p>
           <label class="toggle-row"><input id="parallaxToggle" type="checkbox" /><span data-i18n="scene.parallax">Параллакс при движении мыши</span></label>
         </div>
 
@@ -445,6 +458,9 @@
           </div>
           <div class="btn-row">
             <button type="button" id="boardClearBtn" class="secondary" data-i18n="board.clear">Очистить доску</button>
+            <button type="button" id="boardRecBtn" class="secondary" data-i18n="board.record">⏺ Записать</button>
+            <button type="button" id="boardShotBtn" class="secondary" data-i18n="board.shot">📷 Скриншот</button>
+            <button type="button" id="boardReplayBtn" class="secondary" data-i18n="board.replay">↻ Повторить</button>
           </div>
         </div>
 
@@ -483,6 +499,7 @@
           </form>
           <div id="weatherBody" class="weather-body"><span class="hint" data-i18n="weather.empty">Погода ещё не загружена.</span></div>
           <div id="weatherForecast" class="weather-forecast"></div>
+          <p id="weatherSource" class="hint weather-source"></p>
         </div>
 
         <div class="card">
@@ -557,6 +574,27 @@
     <div class="modal-card palette">
       <input id="paletteInput" type="text" data-i18n-placeholder="palette.ph" placeholder="Введите команду…" autocomplete="off" />
       <ul id="paletteList" class="palette-list" role="listbox"></ul>
+    </div>
+  </div>
+
+  <!-- Просмотр сцены другого участника -->
+  <div id="peekModal" class="modal" hidden>
+    <div class="modal-card peek-card">
+      <div class="peek-head">
+        <span class="user-avatar" id="peekAvatar">🙂</span>
+        <h3 id="peekTitle" class="peek-title">Сцена</h3>
+        <button type="button" class="icon-btn" data-close-modal aria-label="Закрыть">✕</button>
+      </div>
+      <div id="peekStage" class="peek-stage">
+        <div id="peekBg" class="peek-bg"></div>
+        <div id="peekVideo" class="peek-video-layer hidden"></div>
+        <div id="peekObjects" class="peek-objects"></div>
+      </div>
+      <p id="peekMeta" class="hint peek-meta"></p>
+      <div class="btn-row">
+        <button type="button" id="peekCopyBtn" class="secondary" data-i18n="peek.copy">Поставить себе</button>
+        <button type="button" class="ghost" data-close-modal data-i18n="peek.close">Закрыть</button>
+      </div>
     </div>
   </div>
 

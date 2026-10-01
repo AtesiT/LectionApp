@@ -1,10 +1,10 @@
 // Геометрия 2D-фигур. Все фигуры описываются полигоном с одинаковым числом
 // вершин, поэтому браузер умеет плавно интерполировать clip-path между ними
 // (это используется анимацией «Морфинг»).
-export const SHAPES = ['circle', 'square', 'triangle', 'star', 'heart', 'hexagon', 'ring', 'emoji', 'text', 'image'];
+export const SHAPES = ['circle', 'square', 'triangle', 'star', 'heart', 'hexagon', 'ring', 'emoji', 'text', 'image', 'video'];
 export const POLYGON_SHAPES = ['circle', 'square', 'triangle', 'star', 'heart', 'hexagon', 'ring'];
 export const SHAPE_ICONS = {
-  circle: '●', square: '■', triangle: '▲', star: '★', heart: '♥', hexagon: '⬢', ring: '◎', emoji: '🙂', text: 'Aa', image: '🖼',
+  circle: '●', square: '■', triangle: '▲', star: '★', heart: '♥', hexagon: '⬢', ring: '◎', emoji: '🙂', text: 'Aa', image: '🖼', video: '🎬',
 };
 
 const POINTS = 72;

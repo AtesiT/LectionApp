@@ -6,9 +6,8 @@ import { t, getLang, toggleLang } from '../core/i18n.js';
 import { state, subscribe, syncableState, replaceState, activeObject } from '../core/store.js';
 import * as transport from './transport.js';
 import { toast } from '../ui/toast.js';
-import { runAnimations, animationByKey } from '../scene/animations.js';
-import { clipPathFor, isPolygonShape } from '../scene/shapes.js';
-import { buildModel } from '../scene/model3d.js';
+import { renderObjectPreview } from '../scene/preview.js';
+import { togglePeek, closePeek } from '../ui/peek.js';
 
 export const session = {
   userId: null, userName: '', avatar: '🙂', room: null, hostId: null, users: [], frozen: false,
@@ -453,12 +452,15 @@ function renderOnlineList() {
   }
 }
 
+/** Подпись карточки: если она не изменилась — карточку не перерисовываем. */
 function showcaseSignature(user) {
   const s = user.state || {};
-  const obj = s.objects?.[0] || {};
-  const { x, y, customPath, ...visual } = obj;
+  const objects = (s.objects || []).slice(0, 4).map((o) => {
+    const { x, y, customPath, ...visual } = o;
+    return visual;
+  });
   return JSON.stringify([user.name, user.avatar, user.color, user.status, user.role, user.likes, user.follow, user.tz,
-    s.use3d, s.shape3d, s.speed, s.playing, visual, getLang()]);
+    s.use3d, s.shape3d, s.speed, s.playing, s.background, objects, getLang()]);
 }
 
 function renderShowcase(force = false) {
@@ -482,8 +484,7 @@ function renderShowcase(force = false) {
       root.append(node.card);
     }
     if (force || node.sig !== sig) {
-      node.running.forEach((a) => a.cancel());
-      node.running = [];
+      stopCard(node);
       fillCard(node, user);
       node.sig = sig;
     } else {
@@ -494,17 +495,23 @@ function renderShowcase(force = false) {
   });
   for (const [id, node] of showcaseNodes) {
     if (!seen.has(id)) {
-      node.running.forEach((a) => a.cancel());
+      stopCard(node);
       node.card.remove();
       showcaseNodes.delete(id);
     }
   }
 }
 
+function stopCard(node) {
+  (node.running || []).forEach((stop) => { try { stop(); } catch { /* уже остановлено */ } });
+  node.running = [];
+}
+
 function fillCard(node, user) {
   const { card } = node;
   const s = user.state || {};
-  const obj = s.objects?.[0] || { shape: 'circle', color: user.color, size: 120, animations: ['pulse'] };
+  const objects = (s.objects || []).slice(0, 4);
+  const obj = objects[0] || { shape: 'circle', color: user.color, size: 120, animations: ['pulse'] };
   const self = user.id === session.userId;
   card.className = `user-model-card ${self ? 'self' : ''} ${user.role === 'host' ? 'host' : ''} ${user.status === 'afk' ? 'afk' : ''}`;
   card.style.setProperty('--user-color', user.color || 'var(--accent)');
@@ -516,61 +523,41 @@ function fillCard(node, user) {
     self ? el('span', { class: 'you', text: t('users.you') }) : null,
     user.role === 'host' ? el('span', { class: 'badge', title: t('users.host'), text: '👑' }) : null,
     user.status === 'afk' ? el('span', { class: 'badge', title: t('users.afk'), text: '💤' }) : null,
+    el('button', {
+      type: 'button', class: 'icon-btn tiny peek-btn', title: t('users.view'), text: '👁',
+      onClick: (e) => { e.stopPropagation(); togglePeek(user, { self: user.id === session.userId }); },
+    }),
   ]);
   const stageBox = el('div', { class: 'user-model-stage' });
+  stageBox.addEventListener('click', () => togglePeek(user, { self: user.id === session.userId }));
   const meta = el('div', { class: 'user-model-meta' }, [
     el('span', { text: s.use3d ? t(`s3.${s.shape3d || 'cube'}`) : (obj.animations?.length ? obj.animations.slice(0, 2).map((k) => t(`a.${k}`)).join(' + ') : t('feed.animNone')) }),
     el('span', { text: `x${Number(s.speed ?? 1).toFixed(1)}` }),
+    objects.length > 1 ? el('span', { text: `×${objects.length}` }) : null,
   ]);
   const actions = el('div', { class: 'user-model-actions' }, [
     user.tz ? el('span', { class: 'user-time', dataset: { userTime: user.id }, text: userTime(user) }) : el('span'),
     el('button', {
       type: 'button', class: 'like-btn', disabled: self, title: t('users.like'),
       text: `❤ ${user.likes || 0}`,
-      onClick: () => { if (!self) emit('like:send', user.id); },
+      onClick: (e) => { e.stopPropagation(); if (!self) emit('like:send', user.id); },
     }),
   ]);
   const floatLayer = el('div', { class: 'reaction-float-layer' });
   card.append(nameRow, stageBox, meta, actions, floatLayer);
 
-  const MINI = 58;
-  if (s.use3d) {
-    const { root } = buildModel(s.shape3d || 'cube', 44, obj.color || user.color);
-    const spin = el('div', { class: `mini-spin ${s.playing && obj.animations?.includes('rotate') ? 'on' : ''}` }, [root]);
-    spin.style.setProperty('--speed', String(Math.max(0.1, s.speed || 1)));
-    const model = el('div', { class: 'mini-model' }, [spin]);
-    model.style.transform = `rotateX(${s.modelRotX ?? -18}deg) rotateY(${s.modelRotY ?? 28}deg) scale(${s.modelZoom ?? 1})`;
-    stageBox.append(model);
-    return;
-  }
-  const shape = el('div', { class: `shape shape-${obj.shape}` });
-  const fx = el('div', { class: 'obj-fx' }, [shape]);
-  const anim = el('div', { class: 'obj-anim' }, [fx]);
-  const mini = el('div', { class: 'mini-obj' }, [anim]);
-  mini.style.setProperty('--size', `${MINI}px`);
-  shape.dataset.polygon = isPolygonShape(obj.shape) ? '1' : '0';
-  if (isPolygonShape(obj.shape)) {
-    shape.style.clipPath = clipPathFor(obj.shape, obj.radius ?? 14);
-    shape.style.background = obj.color || user.color;
-  } else if (obj.shape === 'emoji') {
-    shape.textContent = obj.emoji || '🙂';
-    shape.style.fontSize = `${Math.round(MINI * 0.78)}px`;
-  } else if (obj.shape === 'text') {
-    shape.textContent = obj.text || 'Text';
-    shape.style.fontSize = '14px';
-    shape.style.color = obj.color || user.color;
-  } else {
-    shape.textContent = '🖼';
-    shape.style.fontSize = `${Math.round(MINI * 0.6)}px`;
-  }
-  fx.style.opacity = String(obj.opacity ?? 1);
-  if (obj.glow > 0) fx.style.filter = `drop-shadow(0 0 ${Math.round(obj.glow * 10)}px ${obj.color})`;
-  stageBox.append(mini);
-  if (s.playing !== false) {
-    node.running = runAnimations(obj.animations || [], { anim, fx, shape }, {
-      speed: s.speed || 1, shape: obj.shape, scale: MINI / (obj.size || 160),
+  // Рисуем все объекты участника: фигуры, картинки и видео, которые он поставил себе.
+  const many = objects.length > 1;
+  const size = many ? Math.max(26, Math.round(58 / Math.min(2, objects.length))) : 58;
+  for (const item of (many ? objects : [obj])) {
+    const { node: preview, stop } = renderObjectPreview(item, s, {
+      size, animate: s.playing !== false, interactive: false,
     });
+    if (!many && s.use3d) preview.classList.add('alone');
+    stageBox.append(preview);
+    node.running.push(stop);
   }
+  if (!objects.length) stageBox.append(el('div', { class: 'showcase-empty small', text: '—' }));
 }
 
 // ---------------------------------------------------------------------------
@@ -691,7 +678,10 @@ function onLocalState(s, patch, meta) {
 /** Действие без изменения состояния (кубик Рубика, достижения, квиз). */
 export function sendAction(action, vars = {}) {
   if (!session.connected) return;
-  const keyMap = { rubik: 'feed.rubik', rubikSolve: 'feed.rubikSolve', achievement: 'feed.achievement', quiz: 'feed.quiz', konami: 'feed.konami' };
+  const keyMap = {
+    rubik: 'feed.rubik', rubikSolve: 'feed.rubikSolve', achievement: 'feed.achievement',
+    quiz: 'feed.quiz', konami: 'feed.konami', copyScene: 'feed.copyScene',
+  };
   const key = keyMap[action] || 'feed.update';
   transport.send({ kind: 'action', type: action, textKey: key, vars, text: t(key, vars), state: syncableState() });
 }

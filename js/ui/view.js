@@ -14,7 +14,7 @@ import { BG_PRESETS } from '../scene/backgrounds.js';
 import { THEMES } from './panels.js';
 import { toggleSound, toggleMic } from '../features/audio.js';
 import { toggleVoice } from '../features/voice.js';
-import { toggleBoardMode } from '../net/whiteboard.js';
+import { toggleBoardMode, screenshot as boardScreenshot, startRecording, stopRecording, startReplay } from '../net/whiteboard.js';
 import { focusChat } from '../net/chat.js';
 import { showQR } from '../net/qr.js';
 import { refresh as refreshWeather } from '../features/weather.js';
@@ -204,6 +204,10 @@ function registerAll() {
     { id: 'palette', title: 'cmd.palette', category: 'nav', keys: 'Ctrl+K', run: () => emit('palette:toggle'), hidden: true },
     { id: 'chat', title: 'cmd.chat', category: 'session', keys: 'C', run: () => { openTab('session'); focusChat(); } },
     { id: 'board', title: 'cmd.board', category: 'session', keys: 'B', run: () => toggleBoardMode() },
+    { id: 'boardShot', title: 'cmd.boardShot', category: 'session', run: () => { openTab('session'); boardScreenshot(); } },
+    { id: 'boardRec', title: 'cmd.boardRec', category: 'session', run: () => { openTab('session'); startRecording(); } },
+    { id: 'boardRecStop', title: 'cmd.boardRecStop', category: 'session', run: () => stopRecording() },
+    { id: 'boardReplay', title: 'cmd.boardReplay', category: 'session', run: () => { openTab('session'); startReplay(); } },
     { id: 'qr', title: 'cmd.qr', category: 'session', run: showQR },
     { id: 'weather', title: 'cmd.weather', category: 'misc', run: refreshWeather },
     { id: 'quiz', title: 'cmd.quiz', category: 'misc', run: openQuiz },

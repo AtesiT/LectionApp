@@ -108,6 +108,28 @@ const fact = await (await fetch(`${base}/api/ext/fact?lang=en`)).json();
 check('факт дня (сеть или офлайн-набор)', fact.ok === true && typeof fact.text === 'string');
 const rates = await (await fetch(`${base}/api/ext/rates`)).json();
 check('курсы валют: корректный ответ', typeof rates.ok === 'boolean' && typeof rates.fiat === 'object' && typeof rates.crypto === 'object');
+// Погода: три источника по очереди (Open-Meteo → met.no → wttr.in).
+const wGeo = await (await fetch(`${base}/api/ext/weather?q=Moscow&lang=ru`)).json();
+check('погода: ответ по названию города', typeof wGeo.ok === 'boolean',
+  JSON.stringify(wGeo).slice(0, 160));
+if (wGeo.ok) {
+  check('погода: полные данные', typeof wGeo.temp === 'number' && typeof wGeo.code === 'number'
+    && Array.isArray(wGeo.daily) && wGeo.source !== undefined, JSON.stringify(wGeo).slice(0, 160));
+} else {
+  check('погода офлайн по городу: wttr.in опробован',
+    !!wGeo.tried && wGeo.tried.join().includes('wttr.in'), JSON.stringify(wGeo).slice(0, 160));
+}
+const wCoords = await (await fetch(`${base}/api/ext/weather?lat=55.75&lon=37.61&place=Moscow&lang=ru`)).json();
+if (wCoords.ok) {
+  check('погода по координатам: полные данные', typeof wCoords.temp === 'number' && typeof wCoords.code === 'number',
+    JSON.stringify(wCoords).slice(0, 160));
+} else {
+  check('погода офлайн по координатам: перебраны все три источника',
+    !!wCoords.tried && ['open-meteo', 'met.no', 'wttr.in'].every((n) => wCoords.tried.join().includes(n)),
+    JSON.stringify(wCoords).slice(0, 160));
+}
+const wBad = await (await fetch(`${base}/api/ext/weather`)).json();
+check('погода без координат и города — ошибка запроса', wBad.ok === false && wBad.error === 'bad_request');
 const health = await (await fetch(`${base}/api/health`)).json();
 check('health', health.ok === true && typeof health.rooms === 'number');
 for (const p of ['/room_server.py', '/README_RU.txt', '/.git/HEAD', '/run_local_server.sh']) {

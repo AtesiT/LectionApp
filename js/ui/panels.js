@@ -1,6 +1,7 @@
 // Панели управления: объект, анимации, 3D, сцена, верхняя панель (undo/redo), тема.
 // Панели только отражают состояние (store) и отправляют изменения обратно.
 import { $, $$, el, loadJSON, saveJSON, readFileAsDataURL, debounce } from '../core/dom.js';
+import { compressImage, parseVideoUrl, readVideoFile, dataUrlBytes } from '../core/media.js';
 import { on, emit } from '../core/bus.js';
 import { t, getLang } from '../core/i18n.js';
 import {
@@ -25,7 +26,12 @@ const ANIM_ICONS = {
 let favorites = new Set(loadJSON('mp2:favAnims', []));
 let animFilter = '';
 let favOnly = false;
-const MAX_IMAGE = 4 * 1024 * 1024;
+const MAX_IMAGE = 8 * 1024 * 1024;
+const MAX_VIDEO = 12 * 1024 * 1024;
+// Лимиты на медиа, которое уезжает другим участникам (см. MEDIA_SYNC_BUDGET в store.js).
+// data URL примерно на треть длиннее исходного файла — поэтому порог файла ниже бюджета.
+const MEDIA_SYNC_BYTES = 90_000;
+const BG_IMAGE_SYNC_BYTES = 100_000;
 
 export function init() {
   buildShapeGrid();
@@ -153,13 +159,43 @@ function bindObjectPanel() {
     if (!file) return;
     if (file.size > MAX_IMAGE) { toast(t('obj.imageTooBig'), { type: 'warn' }); e.target.value = ''; return; }
     try {
-      const url = await readFileAsDataURL(file);
+      // Сжимаем картинку: тогда она уезжает другим участникам и видят её все.
+      const url = await compressImage(file, { maxSide: 256, quality: 0.72, maxBytes: 32_000 });
+      if (!url) throw new Error('compress_failed');
       updateActiveObject({ image: url, shape: 'image' }, { action: 'shape' });
+      const kb = Math.round(dataUrlBytes(url) / 1024);
+      toast(t('obj.imageAdded', { kb }), { icon: '🖼' });
     } catch (err) {
       console.warn(err);
+      toast(t('obj.imageFail'), { type: 'warn' });
     }
     e.target.value = '';
   });
+  $('#objVideoFile').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_VIDEO) { toast(t('obj.videoTooBig'), { type: 'warn' }); e.target.value = ''; return; }
+    try {
+      const { dataUrl, syncable } = await readVideoFile(file, MEDIA_SYNC_BYTES);
+      updateActiveObject({ video: { provider: 'file', id: file.name, src: dataUrl }, shape: 'video' }, { action: 'shape' });
+      toast(syncable ? t('obj.videoAdded') : t('obj.videoLocal'), { icon: '🎬' });
+    } catch (err) {
+      console.warn(err);
+      toast(t('obj.videoFail'), { type: 'warn' });
+    }
+    e.target.value = '';
+  });
+  const applyVideoUrl = () => {
+    const url = $('#objVideoUrl').value.trim();
+    if (!url) return;
+    const parsed = parseVideoUrl(url);
+    if (!parsed) { toast(t('obj.videoBadUrl'), { type: 'warn' }); return; }
+    updateActiveObject({ video: { provider: parsed.provider, id: parsed.id, src: url, embed: parsed.embed }, shape: 'video' }, { action: 'shape' });
+    toast(t('obj.videoLinked', { provider: parsed.label }), { icon: '🎬' });
+    $('#objVideoUrl').value = '';
+  };
+  $('#objVideoUrlBtn').addEventListener('click', applyVideoUrl);
+  $('#objVideoUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyVideoUrl(); } });
 
   $('#addObjectBtn').addEventListener('click', () => {
     if (state.objects.length >= 12) { toast(t('obj.limit'), { type: 'warn' }); return; }
@@ -375,6 +411,29 @@ function setBackground(patch, action = 'background') {
   setState({ background: next }, { action, vars: { bg: label } });
 }
 
+let bgObjectUrl = null;
+
+function revokeBgVideo() {
+  if (bgObjectUrl) { URL.revokeObjectURL(bgObjectUrl); bgObjectUrl = null; }
+}
+
+/** Фон по ссылке: YouTube / Rutube / VK → плеер, прямая ссылка → картинка или файл. */
+function applyBgUrl() {
+  const url = $('#bgUrl').value.trim();
+  if (!url) return;
+  const video = parseVideoUrl(url);
+  if (video) {
+    setBackground({ type: 'video', value: url, provider: video.provider, videoId: video.id, embed: video.embed });
+    toast(t('scene.videoLinked', { provider: video.label }), { icon: '🎬' });
+    return;
+  }
+  if (/^https?:\/\//i.test(url) || url.startsWith('/')) {
+    setBackground({ type: 'image', value: url });
+    return;
+  }
+  toast(t('scene.badUrl'), { type: 'warn' });
+}
+
 function bindScenePanel() {
   $('#themeSelect').addEventListener('change', (e) => setState({ theme: e.target.value }, { action: 'theme' }));
   $('#cursorFxSelect').addEventListener('change', (e) => setState({ cursorFx: e.target.value }, { source: 'system' }));
@@ -385,24 +444,35 @@ function bindScenePanel() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_IMAGE) { toast(t('obj.imageTooBig'), { type: 'warn' }); e.target.value = ''; return; }
-    const url = await readFileAsDataURL(file);
-    setBackground({ type: 'image', value: url });
+    try {
+      const raw = await readFileAsDataURL(file);
+      const url = dataUrlBytes(raw) <= BG_IMAGE_SYNC_BYTES ? raw : await compressImage(file, { maxSide: 1280, quality: 0.8, maxBytes: BG_IMAGE_SYNC_BYTES });
+      setBackground({ type: 'image', value: url || raw });
+    } catch (err) {
+      console.warn(err);
+      toast(t('obj.imageFail'), { type: 'warn' });
+    }
     e.target.value = '';
   });
-  $('#bgVideoFile').addEventListener('change', (e) => {
+  $('#bgVideoFile').addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setBackground({ type: 'video', value: url });
+    if (file.size > MAX_VIDEO) { toast(t('obj.videoTooBig'), { type: 'warn' }); e.target.value = ''; return; }
+    // Небольшой ролик читаем целиком — тогда фон увидят и другие участники.
+    if (file.size <= MEDIA_SYNC_BYTES) {
+      const { dataUrl } = await readVideoFile(file, MEDIA_SYNC_BYTES);
+      setBackground({ type: 'video', value: dataUrl, provider: 'file' });
+    } else {
+      revokeBgVideo();
+      const url = URL.createObjectURL(file);
+      bgObjectUrl = url;
+      setBackground({ type: 'video', value: url, provider: 'file' });
+      toast(t('scene.videoLocalBg'), { icon: '🎬' });
+    }
     e.target.value = '';
   });
-  $('#bgUrlBtn').addEventListener('click', () => {
-    const url = $('#bgUrl').value.trim();
-    if (!url) return;
-    const isVideo = /\.(mp4|webm|ogv|mov)(\?|#|$)/i.test(url);
-    setBackground({ type: isVideo ? 'video' : 'image', value: url });
-  });
-  $('#bgUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#bgUrlBtn').click(); } });
+  $('#bgUrlBtn').addEventListener('click', applyBgUrl);
+  $('#bgUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyBgUrl(); } });
   $('#parallaxToggle').addEventListener('change', (e) => setBackground({ parallax: e.target.checked }));
   $('#effectSelect').addEventListener('change', (e) => setState({ effect: e.target.value }, { action: e.target.value === 'none' ? 'effectOff' : 'effect' }));
   const intensity = $('#effectIntensity');

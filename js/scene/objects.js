@@ -5,6 +5,7 @@ import { emit, on } from '../core/bus.js';
 import { state, subscribe, updateObject, setActiveObject, activeObject, updateActiveObject } from '../core/store.js';
 import { clipPathFor, isPolygonShape } from './shapes.js';
 import { runAnimations, trajectoryPoint, trajectoryDuration } from './animations.js';
+import { embedUrl } from '../core/media.js';
 import { t } from '../core/i18n.js';
 import { toast } from '../ui/toast.js';
 
@@ -155,7 +156,44 @@ function applyVisual(node, obj) {
     }
     if (obj.stroke > 0) shape.style.outline = `${obj.stroke}px solid ${obj.strokeColor}`;
     shape.style.borderRadius = `${obj.radius}%`;
+  } else if (obj.shape === 'video') {
+    renderVideoShape(shape, obj);
+    if (obj.stroke > 0) shape.style.outline = `${obj.stroke}px solid ${obj.strokeColor}`;
+    shape.style.borderRadius = `${obj.radius}%`;
   }
+}
+
+/** Объект-видео: ссылка на YouTube/Rutube/VK показывает плеер, файл — <video>. */
+export function renderVideoShape(shape, obj, opts = {}) {
+  const video = obj.video || null;
+  const src = video?.src;
+  if (!src || src === 'local-media') {
+    shape.textContent = '🎬';
+    shape.style.fontSize = `${Math.round((opts.size || obj.size) * 0.55)}px`;
+    shape.title = src === 'local-media' ? t('obj.videoLocalOnly') : t('obj.videoPick');
+    return;
+  }
+  const provider = video.provider;
+  if (provider === 'file') {
+    const tag = el('video', {
+      src, autoplay: true, muted: true, loop: true, playsinline: true, preload: 'auto',
+      style: { width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', display: 'block' },
+    });
+    tag.muted = true;
+    tag.play?.().catch(() => {});
+    shape.append(tag);
+    return;
+  }
+  const frame = el('iframe', {
+    src: video.embed || embedUrl(provider, video.id),
+    title: 'video',
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
+    style: { width: '100%', height: '100%', border: '0', borderRadius: 'inherit', display: 'block', pointerEvents: opts.interactive ? 'auto' : 'none' },
+  });
+  frame.setAttribute('allowfullscreen', 'true');
+  frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  frame.loading = 'lazy';
+  shape.append(frame);
 }
 
 function restartAnimations(node, obj) {

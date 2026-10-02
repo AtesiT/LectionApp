@@ -164,3 +164,46 @@ function loadImage(src) {
     img.src = src;
   });
 }
+
+// --- загрузка на сервер ---------------------------------------------------------
+
+/**
+ * Кладёт файл в /uploads на сервере и возвращает ссылку.
+ * Это снимает ограничение на размер: в состоянии участников лежит короткая ссылка,
+ * а не мегабайты base64. Если сервер недоступен — возвращаем null (и вызывающий
+ * код сам решит, сжимать файл или оставить его локальным).
+ */
+export async function uploadFile(file) {
+  if (!file || typeof fetch !== 'function') return null;
+  try {
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'file') },
+      body: file,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.ok && data.url ? data : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Универсальная подготовка файла к использованию в сцене:
+ * сначала пробуем загрузить на сервер, иначе сжимаем/читаем локально.
+ * @returns {{src: string, uploaded: boolean, bytes: number, label: string}}
+ */
+export async function prepareMediaFile(file, { maxSide = 256, quality = 0.72, maxBytes = 32_000 } = {}) {
+  const isVideo = /^video\//.test(file.type || '') || /\.(mp4|webm|ogv|mov|m4v)$/i.test(file.name || '');
+  const uploaded = await uploadFile(file);
+  if (uploaded) {
+    return { src: uploaded.url, uploaded: true, bytes: uploaded.size, label: uploaded.name };
+  }
+  if (isVideo) {
+    const { dataUrl, bytes } = await readVideoFile(file, maxBytes);
+    return { src: dataUrl, uploaded: false, bytes, label: file.name };
+  }
+  const dataUrl = await compressImage(file, { maxSide, quality, maxBytes });
+  return { src: dataUrl || '', uploaded: false, bytes: dataUrl ? dataUrlBytes(dataUrl) : 0, label: file.name };
+}

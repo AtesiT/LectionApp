@@ -44,6 +44,7 @@ export const DEFAULT_STATE = Object.freeze({
   gravity: 1,
   weatherSync: false,
   cursorFx: 'trail',
+  timeline: { enabled: true, duration: 8000, loop: true, tracks: {} },
 });
 
 // Ключи, которые не отправляются другим участникам.

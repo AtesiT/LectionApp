@@ -395,6 +395,80 @@ await sleep(800);
 check('цитата показана', $('#quoteText').textContent.length > 10);
 check('курсы: сообщение офлайн', $('#ratesTable').textContent.length > 5);
 
+// --- Таймлайн (ключевые кадры) -----------------------------------------------------------
+click('.tab[data-tab="timeline"]');
+check('вкладка timeline активна', $('.panel[data-panel="timeline"]').classList.contains('active'));
+const objId = store.activeObject().id;
+change('#tlProp', 'size');
+click('#tlAddBtn');
+check('ключевой кадр добавлен', (store.state.timeline.tracks?.[objId]?.size || []).length === 1);
+check('дорожка отрисована', document.querySelectorAll('#tlLanes .tl-lane').length >= 1);
+check('ключ показан в списке', document.querySelectorAll('#tlKeys .tl-key-item').length === 1);
+click('#tlPlayBtn'); click('#tlPlayBtn');
+change('#tlDuration', '12000');
+check('длительность таймлайна', store.state.timeline.duration === 12000);
+change('#tlLoop', false);
+check('цикл выключен', store.state.timeline.loop === false);
+click('#tlStopBtn');
+click('#tlDeleteBtn');
+check('ключ удалён', (store.state.timeline.tracks?.[objId]?.size || []).length === 0);
+click('#tlClearBtn');
+
+// --- Мини-игры ---------------------------------------------------------------------------
+click('.tab[data-tab="games"]');
+check('вкладка games активна', $('.panel[data-panel="games"]').classList.contains('active'));
+click('#gameChessBtn');
+await sleep(600);
+check('шахматы созданы', document.querySelectorAll('#gamesList .game-card').length === 1);
+check('шахматная доска 8×8', document.querySelectorAll('#gamesList .chess-cell').length === 64);
+click('#gameTttBtn');
+await sleep(600);
+check('крестики-нолики созданы', document.querySelectorAll('#gamesList .game-card').length === 2);
+check('поле 3×3 отрисовано', document.querySelectorAll('#gamesList .ttt-board').length === 1);
+check('карточка показывает статус ожидания', $('#gamesList .game-status').textContent.length > 3);
+click('#gameSnakeBtn');
+check('локальная игра открылась', !$('#localGameCard').hidden && !!$('#localGameBody canvas'));
+click('#gameRpsBtn');
+check('игра КНБ открылась', document.querySelectorAll('#localGameBody .rps-btn').length === 3);
+const localButtons = document.querySelectorAll('#localGameBody .btn-row button');
+localButtons[localButtons.length - 1].click();
+check('локальная игра закрыта', $('#localGameCard').hidden);
+
+// --- Песочница «Порошок» ------------------------------------------------------------------
+click('.tab[data-tab="powder"]');
+check('вкладка powder активна', $('.panel[data-panel="powder"]').classList.contains('active'));
+check('палитра элементов построена', document.querySelectorAll('#powderPalette .powder-chip').length >= 30);
+check('выбран элемент по умолчанию', document.querySelectorAll('#powderPalette .powder-chip.active').length === 1);
+click('#powderClear'); click('#powderStep'); click('#powderPlay');
+input('#powderBrush', '7');
+check('кисть изменена', $('#powderBrushVal').textContent === '7');
+change('#powderDemo', 'rain');
+check('пример выбран', $('#powderDemo').value === 'rain');
+
+// --- Запись и экспорт ---------------------------------------------------------------------
+click('.tab[data-tab="scene"]');
+check('карточка экспорта есть', !!$('#recSceneBtn') && !!$('#recGifBtn'));
+click('#exportCssBtn');
+click('#exportHtmlBtn');
+click('#recSceneBtn');
+check('кнопки экспорта не ломают приложение', document.body.classList.contains('ready'));
+
+// --- Плагины --------------------------------------------------------------------------------
+click('.tab[data-tab="help"]');
+input('#pluginCode', 'motion.log("привет из плагина"); motion.updateActive({ size: 123 });');
+click('#pluginRunBtn');
+check('плагин выполнен', $('#pluginLog').textContent.includes('привет из плагина'));
+check('плагин изменил объект', store.activeObject().size === 123);
+click('#pluginStopBtn'); click('#pluginClearBtn');
+check('лог плагина очищен', $('#pluginLog').textContent.trim() === '');
+
+// --- Журнал занятия -------------------------------------------------------------------------
+click('.tab[data-tab="session"]');
+click('#journalRefreshBtn');
+await sleep(600);
+check('журнал загружен', document.querySelectorAll('#journalList .journal-item').length >= 1);
+click('#journalSaveBtn'); click('#journalCopyBtn');
+
 // --- Локальное сохранение и выход -------------------------------------------------------
 key('s', { ctrlKey: true });
 check('сцена сохранена локально', window.localStorage.getItem('mp2:scene') !== null || Array.from(window.localStorage.map.keys()).some((k) => k.startsWith('mp2:')));

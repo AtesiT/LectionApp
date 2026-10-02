@@ -2,8 +2,9 @@
 // состояние → локализация → сцена (объекты до физики) → сеть → панели → фичи.
 import { $, $$ } from './core/dom.js';
 import { on, emit } from './core/bus.js';
-import { initState, state, subscribe, saveLocal } from './core/store.js';
-import { applyI18n, getLang } from './core/i18n.js';
+import { initState, state, subscribe, saveLocal, activeObject } from './core/store.js';
+import { applyI18n, getLang, t } from './core/i18n.js';
+import { toast } from './ui/toast.js';
 
 import * as objects from './scene/objects.js';
 import * as physics from './scene/physics.js';
@@ -15,6 +16,8 @@ import * as cursorfx from './scene/cursorfx.js';
 
 import * as session from './net/session.js';
 import * as chat from './net/chat.js';
+import * as rtc from './net/rtc.js';
+import * as shared from './net/shared.js';
 import * as polls from './net/polls.js';
 import * as cursors from './net/cursors.js';
 import * as whiteboard from './net/whiteboard.js';
@@ -23,6 +26,7 @@ import * as qr from './net/qr.js';
 
 import * as panels from './ui/panels.js';
 import * as view from './ui/view.js';
+import * as timeline from './ui/timeline.js';
 import * as shortcuts from './ui/shortcuts.js';
 import * as palette from './ui/palette.js';
 import * as peek from './ui/peek.js';
@@ -36,6 +40,11 @@ import * as easter from './features/easter.js';
 import * as quiz from './features/quiz.js';
 import * as pwa from './features/pwa.js';
 import * as gestures from './features/gestures.js';
+import * as games from './features/games.js';
+import * as powder from './features/powder.js';
+import * as journal from './features/journal.js';
+import * as plugins from './core/plugins.js';
+import * as recorder from './scene/recorder.js';
 
 function setupTabs() {
   const tabs = $$('.tab[data-tab]');
@@ -109,10 +118,13 @@ function boot() {
   view.init();
   shortcuts.init();
   palette.init();
+  timeline.init();
 
   // Сеть
   session.init();
   chat.init();
+  rtc.init();
+  shared.init();
   polls.init();
   cursors.init();
   whiteboard.init();
@@ -129,6 +141,11 @@ function boot() {
   quiz.init();
   pwa.init();
   gestures.init();
+  games.init();
+  powder.init();
+  journal.init();
+  plugins.init();
+  setupExport();
 
   // Автосохранение сцены локально (не чаще раза в секунду)
   let saveTimer = null;
@@ -138,9 +155,46 @@ function boot() {
     saveTimer = setTimeout(saveLocal, 1000);
   });
 
-  window.__motion = { state, emit, on };
+  // window.__motion — открытый API для плагинов (ставится в plugins.init)
+  if (!window.__motion) window.__motion = { state, emit, on };
   document.body.classList.add('ready');
   console.info('%cMotion Playground 2.0', 'color:#38BDF8;font-weight:bold', '— готово. Попробуйте ↑↑↓↓←→←→BA 😉');
+}
+
+// Запись сцены в видео/GIF и экспорт анимации в CSS/HTML.
+function setupExport() {
+  const recBtn = $('#recSceneBtn');
+  recBtn?.addEventListener('click', () => {
+    if (recorder.isRecording()) {
+      recorder.stopSceneRecording();
+      if (recBtn) recBtn.textContent = t('export.video');
+    } else if (recorder.startSceneRecording()) {
+      recBtn.textContent = t('export.videoStop');
+      toast(t('export.recStarted'), { icon: '⏺' });
+    }
+  });
+  $('#recGifBtn')?.addEventListener('click', async () => {
+    const btn = $('#recGifBtn');
+    if (btn) btn.disabled = true;
+    try {
+      await recorder.exportSceneGif({ seconds: 4, fps: 12, scale: 0.5 });
+    } catch (err) {
+      console.warn('gif export failed', err);
+      toast(t('export.gifFail'), { type: 'warn' });
+    }
+    if (btn) btn.disabled = false;
+  });
+  $('#exportCssBtn')?.addEventListener('click', () => {
+    const obj = activeObject();
+    if (!obj) { toast(t('export.noObject'), { type: 'warn' }); return; }
+    recorder.exportCssFile(obj);
+  });
+  $('#exportHtmlBtn')?.addEventListener('click', () => {
+    const obj = activeObject();
+    if (!obj) { toast(t('export.noObject'), { type: 'warn' }); return; }
+    recorder.exportHtmlFile(obj);
+  });
+  on('shared:view', () => { /* переключение общей/своей сцены */ });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

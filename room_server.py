@@ -20,14 +20,17 @@ import random
 import socket
 import string
 import struct
+import atexit
 import re
+import shutil
+import signal
 import threading
 import time
 import urllib.parse
 import urllib.request
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("PORT", "8080"))
@@ -37,7 +40,27 @@ MAX_CHAT = 200
 MAX_STROKES = 600
 MAX_STROKE_POINTS = 2500
 MAX_POLLS = 20
+MAX_JOURNAL = 800          # записей в журнале занятия
 MAX_STATE_BYTES = 64_000
+
+# --- Файлы и постоянство ---------------------------------------------------
+DATA_DIR = os.path.join(ROOT, "data")
+UPLOAD_DIR = os.path.join(ROOT, "uploads")
+PERSIST_FILE = os.path.join(DATA_DIR, "rooms.json")
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024      # один файл
+MAX_UPLOAD_TOTAL = 300 * 1024 * 1024     # всё хранилище
+UPLOAD_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+    ".webp": "image/webp", ".bmp": "image/bmp", ".ico": "image/x-icon",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".ogg": "audio/ogg", ".ogv": "video/ogg",
+    ".mov": "video/quicktime", ".m4v": "video/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+}
+PERSIST_INTERVAL = 15.0
+for _dir in (DATA_DIR, UPLOAD_DIR):
+    try:
+        os.makedirs(_dir, exist_ok=True)
+    except OSError:
+        pass
 USER_TTL = 90           # секунд без ping → участник считается отключившимся
 ROOM_TTL = 60 * 60 * 6  # пустая комната удаляется через 6 часов
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -132,11 +155,374 @@ lock = threading.RLock()
 # Модель данных
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Мини-игры: шахматы и крестики-нолики.
+# Правила живут на сервере: так нельзя «схитрить» и рассинхронизация невозможна.
+# --------------------------------------------------------------------------- #
+
+FILES = "abcdefgh"
+
+
+def sq_name(idx: int) -> str:
+    """Индекс 0..63 → имя клетки, 0 = a8 (верхний левый угол доски)."""
+    return f"{FILES[idx % 8]}{8 - idx // 8}"
+
+
+def sq_index(name: str) -> int:
+    col = FILES.find(name[0])
+    row = int(name[1])
+    return (8 - row) * 8 + col
+
+
+def initial_board() -> list:
+    """Стартовая расстановка: элементы — 'wP', 'bK' и т. п., пусто — None."""
+    back = ["R", "N", "B", "Q", "K", "B", "N", "R"]
+    board = [None] * 64
+    for col, piece in enumerate(back):
+        board[col] = "b" + piece              # 8-й ряд (чёрные)
+        board[8 + col] = "bP"                 # 7-й ряд
+        board[48 + col] = "wP"                # 2-й ряд
+        board[56 + col] = "w" + piece         # 1-й ряд (белые)
+    return board
+
+
+def new_chess() -> dict:
+    return {
+        "board": initial_board(),
+        "turn": "w",
+        "castling": "KQkq",
+        "ep": None,               # клетка для взятия на проходе (индекс)
+        "halfmove": 0,
+        "fullmove": 1,
+        "history": [],            # UCI-ходы
+        "result": None,           # None | 'w' | 'b' | 'draw'
+        "reason": "",
+    }
+
+
+def new_tictactoe() -> dict:
+    return {"board": [None] * 9, "turn": "x", "moves": 0, "winner": None, "line": None}
+
+
+def opponent(color: str) -> str:
+    return "b" if color == "w" else "w"
+
+
+def on_board(col: int, row: int) -> bool:
+    return 0 <= col < 8 and 0 <= row < 8
+
+
+def gen_pseudo(board: list, idx: int, castling: str, ep) -> list:
+    """Ходы фигуры без проверки шаха собственному королю."""
+    piece = board[idx]
+    if not piece:
+        return []
+    color, kind = piece[0], piece[1]
+    col, row = idx % 8, idx // 8
+    moves = []                                  # (to, special)
+
+    def slide(deltas):
+        for dc, dr in deltas:
+            c, r = col + dc, row + dr
+            while on_board(c, r):
+                target = board[r * 8 + c]
+                if target is None:
+                    moves.append((r * 8 + c, None))
+                else:
+                    if target[0] != color:
+                        moves.append((r * 8 + c, None))
+                    break
+                c += dc
+                r += dr
+
+    def jump(deltas):
+        for dc, dr in deltas:
+            c, r = col + dc, row + dr
+            if not on_board(c, r):
+                continue
+            target = board[r * 8 + c]
+            if target is None or target[0] != color:
+                moves.append((r * 8 + c, None))
+
+    if kind == "P":
+        direction = -1 if color == "w" else 1
+        start_row = 6 if color == "w" else 1
+        last_row = 0 if color == "w" else 7
+        one = row + direction
+        if on_board(col, one) and board[one * 8 + col] is None:
+            moves.append((one * 8 + col, "promo" if one == last_row else None))
+            two = row + 2 * direction
+            if row == start_row and board[two * 8 + col] is None:
+                moves.append((two * 8 + col, "double"))
+        for dc in (-1, 1):
+            c, r = col + dc, row + direction
+            if not on_board(c, r):
+                continue
+            target = board[r * 8 + c]
+            if target and target[0] != color:
+                moves.append((r * 8 + c, "promo" if r == last_row else None))
+            elif ep is not None and r * 8 + c == ep:
+                moves.append((r * 8 + c, "ep"))
+    elif kind == "N":
+        jump([(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)])
+    elif kind == "K":
+        jump([(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)])
+        # рокировки
+        home = 7 if color == "w" else 0
+        if row == home and col == 4:
+            rights = ("KQ" if color == "w" else "kq")
+            if rights[0] in castling and board[home * 8 + 5] is None and board[home * 8 + 6] is None:
+                rook = board[home * 8 + 7]
+                if rook == color + "R":
+                    moves.append((home * 8 + 6, "castle-k"))
+            if rights[1] in castling and all(board[home * 8 + c] is None for c in (1, 2, 3)):
+                rook = board[home * 8 + 0]
+                if rook == color + "R":
+                    moves.append((home * 8 + 2, "castle-q"))
+    elif kind == "B":
+        slide([(1, 1), (1, -1), (-1, 1), (-1, -1)])
+    elif kind == "R":
+        slide([(1, 0), (-1, 0), (0, 1), (0, -1)])
+    elif kind == "Q":
+        slide([(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)])
+    return moves
+
+
+def find_king(board: list, color: str):
+    target = color + "K"
+    for i, piece in enumerate(board):
+        if piece == target:
+            return i
+    return None
+
+
+def attacked(board: list, idx: int, by_color: str) -> bool:
+    """Бьётся ли клетка idx фигурами цвета by_color (без учёта рокировок)."""
+    col, row = idx % 8, idx // 8
+    # пешки
+    direction = 1 if by_color == "w" else -1     # откуда могла прийти пешка
+    for dc in (-1, 1):
+        c, r = col + dc, row + direction
+        if on_board(c, r) and board[r * 8 + c] == by_color + "P":
+            return True
+    # конь
+    for dc, dr in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)]:
+        c, r = col + dc, row + dr
+        if on_board(c, r) and board[r * 8 + c] == by_color + "N":
+            return True
+    # король
+    for dc, dr in [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]:
+        c, r = col + dc, row + dr
+        if on_board(c, r) and board[r * 8 + c] == by_color + "K":
+            return True
+    # скользящие
+    rays = {
+        "B": [(1, 1), (1, -1), (-1, 1), (-1, -1)],
+        "R": [(1, 0), (-1, 0), (0, 1), (0, -1)],
+        "Q": [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)],
+    }
+    for kind, deltas in rays.items():
+        for dc, dr in deltas:
+            c, r = col + dc, row + dr
+            while on_board(c, r):
+                piece = board[r * 8 + c]
+                if piece:
+                    if piece == by_color + kind:
+                        return True
+                    break
+                c += dc
+                r += dr
+    return False
+
+
+def apply_move(state: dict, frm: int, to: int, promo: str = "q") -> dict:
+    """Применяет ход к копии состояния (без проверки легальности)."""
+    board = list(state["board"])
+    piece = board[frm]
+    color, kind = piece[0], piece[1]
+    captured = board[to]
+    board[frm] = None
+    board[to] = piece
+
+    special = None
+    for mv, sp in gen_pseudo(state["board"], frm, state["castling"], state["ep"]):
+        if mv == to:
+            special = sp
+            break
+
+    if special == "ep":
+        victim_row = (to // 8) + (1 if color == "w" else -1)
+        board[victim_row * 8 + (to % 8)] = None
+    elif special == "castle-k":
+        home = (to // 8) * 8
+        board[home + 5] = board[home + 7]
+        board[home + 7] = None
+    elif special == "castle-q":
+        home = (to // 8) * 8
+        board[home + 3] = board[home + 0]
+        board[home + 0] = None
+    if special == "promo" and kind == "P":
+        board[to] = color + (promo.upper() if promo else "Q")
+
+    castling = state["castling"]
+    if kind == "K":
+        castling = castling.replace("K", "").replace("Q", "") if color == "w" else castling.replace("k", "").replace("q", "")
+    for idx, letter in ((0, "Q"), (7, "K"), (56, "q"), (63, "k")):
+        if frm == idx or to == idx:
+            castling = castling.replace(letter, "")
+
+    return {
+        "board": board,
+        "turn": opponent(color),
+        "castling": castling,
+        "ep": (frm + to) // 2 if special == "double" else None,
+        "halfmove": 0 if (kind == "P" or captured) else state["halfmove"] + 1,
+        "fullmove": state["fullmove"] + (1 if color == "b" else 0),
+        "history": state["history"] + [sq_name(frm) + sq_name(to) + (promo if special == "promo" else "")],
+        "result": None,
+        "reason": "",
+    }
+
+
+def legal_moves(state: dict) -> list:
+    """Все легальные ходы в формате UCI (с учётом шаха и рокировок)."""
+    color = state["turn"]
+    out = []
+    for frm in range(64):
+        piece = state["board"][frm]
+        if not piece or piece[0] != color:
+            continue
+        for to, special in gen_pseudo(state["board"], frm, state["castling"], state["ep"]):
+            for promo in ("q", "r", "b", "n") if special == "promo" else (None,):
+                nxt = apply_move(state, frm, to, promo or "q")
+                king = find_king(nxt["board"], color)
+                if king is None or attacked(nxt["board"], king, opponent(color)):
+                    continue
+                if special and special.startswith("castle"):
+                    # Рокировка: король не под шахом и не проходит через битое поле.
+                    transit = frm + (1 if special == "castle-k" else -1)
+                    if attacked(state["board"], frm, opponent(color)) or attacked(state["board"], transit, opponent(color)):
+                        continue
+                out.append(sq_name(frm) + sq_name(to) + (promo or ""))
+    return out
+
+
+def in_check(state: dict, color: str) -> bool:
+    king = find_king(state["board"], color)
+    return king is not None and attacked(state["board"], king, opponent(color))
+
+
+def chess_move(state: dict, uci: str) -> tuple[bool, str]:
+    """Ход в формате UCI ('e2e4', 'e7e8q'). Возвращает (ok, ошибка)."""
+    uci = (uci or "").strip().lower()
+    if len(uci) not in (4, 5) or uci[:2] not in [sq_name(i) for i in range(64)]:
+        return False, "bad_move"
+    try:
+        frm = sq_index(uci[:2])
+        to = sq_index(uci[2:4])
+    except (ValueError, IndexError):
+        return False, "bad_move"
+    promo = uci[4] if len(uci) == 5 else "q"
+    if uci[:4] + (uci[4] if len(uci) == 5 else "") not in legal_moves(state):
+        return False, "illegal"
+    nxt = apply_move(state, frm, to, promo)
+    side = opponent(nxt["turn"])
+    if not legal_moves(nxt):
+        nxt["result"] = side if in_check(nxt, nxt["turn"]) else "draw"
+        nxt["reason"] = "mate" if in_check(nxt, nxt["turn"]) else "stalemate"
+    elif nxt["halfmove"] >= 100:
+        nxt["result"] = "draw"
+        nxt["reason"] = "fifty"
+    state.clear()
+    state.update(nxt)
+    return True, ""
+
+
+def ttt_move(state: dict, cell: int) -> tuple[bool, str]:
+    if state.get("winner"):
+        return False, "finished"
+    if not isinstance(cell, int) or not 0 <= cell < 9:
+        return False, "bad_move"
+    if state["board"][cell]:
+        return False, "occupied"
+    mark = state["turn"]
+    state["board"][cell] = mark
+    state["moves"] += 1
+    lines = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
+    for a, b, c in lines:
+        if state["board"][a] and state["board"][a] == state["board"][b] == state["board"][c]:
+            state["winner"] = mark
+            state["line"] = [a, b, c]
+            return True, ""
+    if state["moves"] >= 9:
+        state["winner"] = "draw"
+        return True, ""
+    state["turn"] = "o" if mark == "x" else "x"
+    return True, ""
+
+
+def chess_public(state: dict, colors: dict) -> dict:
+    """Состояние для клиента: доска, чей ход, подсветка легальных ходов, шах."""
+    legal: dict[str, list[str]] = {}
+    for uci in legal_moves(state):
+        legal.setdefault(uci[:2], []).append(uci)
+    return {
+        "board": state["board"],
+        "turn": state["turn"],
+        "legal": legal,
+        "check": in_check(state, state["turn"]),
+        "history": state["history"][-20:],
+        "result": state["result"],
+        "reason": state["reason"],
+        "colors": colors,
+    }
+
+
+def ttt_public(state: dict, colors: dict) -> dict:
+    return {
+        "board": state["board"],
+        "turn": state["turn"] if not state["winner"] else None,
+        "winner": state["winner"],
+        "line": state["line"],
+        "colors": colors,
+    }
+
+
+class Game:
+    def __init__(self, game_id: str, kind: str, host_id: str, host_name: str):
+        self.id = game_id
+        self.kind = kind                       # chess | tictactoe
+        self.players: list[str] = [host_id]
+        self.names: dict[str, str] = {host_id: host_name}
+        self.marks: dict[str, str] = {host_id: "w" if kind == "chess" else "x"}
+        self.created = time.time()
+        self.finished = False
+        self.state = new_chess() if kind == "chess" else new_tictactoe()
+        self.spectators: list[str] = []
+
+    def mark_for(self, uid: str):
+        return self.marks.get(uid)
+
+    def public(self) -> dict:
+        colors = {mark: {"id": uid, "name": self.names.get(uid, "")} for uid, mark in self.marks.items()}
+        state = chess_public(self.state, colors) if self.kind == "chess" else ttt_public(self.state, colors)
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "players": [{"id": uid, "name": self.names.get(uid, ""), "mark": self.marks.get(uid)} for uid in self.players],
+            "created": int(self.created * 1000),
+            "waiting": len(self.players) < 2,
+            "finished": bool(self.state.get("result") or self.state.get("winner")),
+            "state": state,
+        }
+
+
 class WSClient:
     """Соединение WebSocket с очередью исходящих сообщений и потоком-отправителем."""
 
-    def __init__(self, wfile):
+    def __init__(self, wfile, uid=""):
         self.wfile = wfile
+        self.uid = uid
         self.q: queue.Queue = queue.Queue(maxsize=500)
         self.alive = True
         self.lock = threading.Lock()
@@ -195,6 +581,21 @@ class WSClient:
         self.alive = False
 
 
+class SSEClient:
+    """Клиент SSE: очередь + uid, чтобы можно было слать сообщение адресно."""
+
+    def __init__(self, q: "queue.Queue", uid: str = ""):
+        self.q = q
+        self.uid = uid
+
+    def put(self, data: str) -> bool:
+        try:
+            self.q.put_nowait(data)
+            return True
+        except queue.Full:
+            return False
+
+
 class Room:
     def __init__(self, code: str):
         self.code = code
@@ -208,8 +609,13 @@ class Room:
         self.host_id: str | None = None
         self.created = time.time()
         self.last_activity = time.time()
-        self.sse: list[queue.Queue] = []
+        self.sse: list[SSEClient] = []
         self.ws: list[WSClient] = []
+        self.games: dict[str, Game] = {}
+        # Журнал занятия: что происходило в комнате, переживает перезапуск сервера.
+        self.journal: list[dict] = []
+        # Общая сцена: когда включена, все участники управляют одной и той же сценой.
+        self.shared: dict = {"enabled": False, "state": None, "by": None}
 
     # --- участники ---------------------------------------------------------
     def pick_color(self) -> str:
@@ -248,6 +654,9 @@ class Room:
     def users_public(self) -> list[dict]:
         return [self.public_user(uid, u) for uid, u in self.users.items()]
 
+    def games_public(self) -> list[dict]:
+        return [g.public() for g in self.games.values()]
+
     def snapshot(self) -> dict:
         return {
             "multiplayer": True,
@@ -260,6 +669,9 @@ class Room:
             "chat": self.chat[-80:],
             "strokes": self.strokes,
             "polls": self.polls[-MAX_POLLS:],
+            "games": self.games_public(),
+            "shared": {"enabled": self.shared["enabled"], "by": self.shared["by"],
+                       "state": self.shared["state"] if self.shared["enabled"] else None},
             "serverTime": now_ms(),
         }
 
@@ -280,25 +692,62 @@ class Room:
         self.feed.append(entry)
         if len(self.feed) > MAX_FEED:
             del self.feed[: len(self.feed) - MAX_FEED]
+        self.journal_entry(action_type, user_name, text, text_key, vars_)
         self.last_activity = time.time()
         return entry
 
+    def journal_entry(self, kind: str, user_name: str, text: str,
+                      text_key: str | None = None, vars_: dict | None = None) -> None:
+        """Журнал занятия: краткая история комнаты (переживает перезапуск)."""
+        entry = {
+            "ts": now_ms(),
+            "type": kind,
+            "user": clean_text(user_name, 40),
+            "text": clean_text(text, 200),
+        }
+        if text_key:
+            entry["textKey"] = text_key
+            entry["vars"] = vars_ or {}
+        self.journal.append(entry)
+        if len(self.journal) > MAX_JOURNAL:
+            del self.journal[: len(self.journal) - MAX_JOURNAL]
+
     def broadcast(self, message: dict) -> None:
         data = json.dumps(message, ensure_ascii=False)
-        dead_q: list[queue.Queue] = []
-        for q in self.sse:
-            try:
-                q.put_nowait(data)
-            except queue.Full:
-                dead_q.append(q)
-        for q in dead_q:
-            if q in self.sse:
-                self.sse.remove(q)
+        for client in list(self.sse):
+            if not client.put(data):
+                if client in self.sse:
+                    self.sse.remove(client)
         for client in list(self.ws):
             if not client.alive:
                 self.ws.remove(client)
                 continue
             client.put(data)
+
+    def broadcast_except(self, uid: str, message: dict) -> None:
+        """Рассылает сообщение всем, кроме uid (используется для WebRTC-сигналинга)."""
+        data = json.dumps(message, ensure_ascii=False)
+        for client in list(self.ws):
+            if not client.alive:
+                self.ws.remove(client)
+                continue
+            if client.uid == uid:
+                continue
+            client.put(data)
+        for client in list(self.sse):
+            if client.uid == uid:
+                continue
+            if not client.put(data) and client in self.sse:
+                self.sse.remove(client)
+
+    def broadcast_to(self, uid: str, message: dict) -> None:
+        data = json.dumps(message, ensure_ascii=False)
+        for client in list(self.ws):
+            if client.uid == uid and client.alive:
+                client.put(data)
+        for client in list(self.sse):
+            if client.uid == uid:
+                client.put(data)
 
     def broadcast_users(self) -> None:
         self.broadcast({"type": "users", "users": self.users_public(), "hostId": self.host_id})
@@ -648,12 +1097,14 @@ def handle_message(room: Room, uid: str, msg: dict) -> dict:
             return {"ok": True}
         if op == "announce":
             room.announcement = clean_text(msg.get("text"), 200)
+            room.journal_entry("announce", user["name"], room.announcement)
             room.broadcast({"type": "announce", "text": room.announcement, "by": user["name"]})
             return {"ok": True}
         if op == "push_scene":
             state = msg.get("state")
             if not isinstance(state, dict):
                 return {"ok": False, "error": "bad_state"}
+            room.journal_entry("push", user["name"], "применил свою сцену ко всем")
             entry = room.push_feed(uid, user["name"], "push", "применил свою сцену ко всем участникам",
                                    "feed.pushScene", {})
             room.broadcast({"type": "apply_state", "state": state, "from": uid, "fromName": user["name"], "entry": entry})
@@ -670,7 +1121,300 @@ def handle_message(room: Room, uid: str, msg: dict) -> dict:
             return {"ok": True}
         return {"ok": False, "error": "unknown_op"}
 
+    # --- общая сцена ----------------------------------------------------------
+    if kind == "shared_enable":
+        if not is_host:
+            return {"ok": False, "error": "host_only"}
+        state = msg.get("state") if isinstance(msg.get("state"), dict) else dict(user.get("state", DEFAULT_STATE))
+        if len(json.dumps(state, ensure_ascii=False)) > MAX_STATE_BYTES * 2:
+            return {"ok": False, "error": "too_big"}
+        room.shared = {"enabled": True, "state": state, "by": uid}
+        entry = room.push_feed(uid, user["name"], "shared", f"{user['name']} включил общую сцену",
+                               "feed.sharedOn", {"name": user["name"]})
+        room.broadcast({"type": "shared", "enabled": True, "state": state, "by": uid, "byName": user["name"],
+                        "entry": entry, "users": room.users_public(), "hostId": room.host_id})
+        return {"ok": True}
+
+    if kind == "shared_disable":
+        if not is_host:
+            return {"ok": False, "error": "host_only"}
+        room.shared = {"enabled": False, "state": room.shared.get("state"), "by": None}
+        entry = room.push_feed(uid, user["name"], "shared", f"{user['name']} вернул каждому свою сцену",
+                               "feed.sharedOff", {"name": user["name"]})
+        room.broadcast({"type": "shared", "enabled": False, "by": uid, "byName": user["name"],
+                        "entry": entry, "users": room.users_public(), "hostId": room.host_id})
+        return {"ok": True}
+
+    if kind == "shared_update":
+        if not room.shared["enabled"]:
+            return {"ok": False, "error": "not_shared"}
+        if room.frozen and not is_host:
+            return {"ok": False, "error": "frozen"}
+        if not limiter.allow(uid, "shared", 20):
+            return {"ok": True, "dropped": True}
+        patch = msg.get("state") if isinstance(msg.get("state"), dict) else None
+        if patch is None:
+            return {"ok": False, "error": "bad_state"}
+        if len(json.dumps(patch, ensure_ascii=False)) > MAX_STATE_BYTES * 2:
+            return {"ok": False, "error": "too_big"}
+        room.shared["state"] = patch
+        room.last_activity = time.time()
+        room.broadcast({"type": "shared", "enabled": True, "state": patch, "from": uid,
+                        "fromName": user.get("name", ""), "textKey": msg.get("textKey"),
+                        "vars": msg.get("vars") if isinstance(msg.get("vars"), dict) else {}})
+        return {"ok": True}
+
+    # --- мини-игры ------------------------------------------------------------
+    if kind == "game_create":
+        kind_game = clean_text(msg.get("game"), 16)
+        if kind_game not in ("chess", "tictactoe"):
+            return {"ok": False, "error": "bad_game"}
+        if len(room.games) >= 12:
+            return {"ok": False, "error": "too_many_games"}
+        game = Game(str(uuid.uuid4())[:8], kind_game, uid, user["name"])
+        room.games[game.id] = game
+        entry = room.push_feed(uid, user["name"], "game", f"{user['name']} создал игру",
+                               "feed.gameCreate" if kind_game == "chess" else "feed.gameCreateTTT",
+                               {"name": user["name"]})
+        room.broadcast({"type": "games", "games": room.games_public(), "entry": entry, "users": room.users_public()})
+        return {"ok": True, "gameId": game.id}
+
+    if kind == "game_join":
+        game = room.games.get(clean_text(msg.get("gameId"), 12))
+        if not game:
+            return {"ok": False, "error": "bad_game"}
+        if uid in game.players:
+            return {"ok": True}
+        if len(game.players) >= 2:
+            return {"ok": False, "error": "full"}
+        game.players.append(uid)
+        game.names[uid] = user["name"]
+        game.marks[uid] = "b" if game.kind == "chess" else "o"
+        entry = room.push_feed(uid, user["name"], "game", f"{user['name']} присоединился к игре",
+                               "feed.gameJoin", {"name": user["name"]})
+        room.broadcast({"type": "games", "games": room.games_public(), "entry": entry, "users": room.users_public()})
+        return {"ok": True}
+
+    if kind == "game_leave":
+        game = room.games.get(clean_text(msg.get("gameId"), 12))
+        if not game:
+            return {"ok": False, "error": "bad_game"}
+        if uid in game.players:
+            game.players.remove(uid)
+        if not game.players:
+            room.games.pop(game.id, None)
+        room.broadcast({"type": "games", "games": room.games_public(), "users": room.users_public()})
+        return {"ok": True}
+
+    if kind == "game_move":
+        game = room.games.get(clean_text(msg.get("gameId"), 12))
+        if not game:
+            return {"ok": False, "error": "bad_game"}
+        if len(game.players) < 2:
+            return {"ok": False, "error": "waiting"}
+        mark = game.mark_for(uid)
+        if mark is None:
+            return {"ok": False, "error": "not_player"}
+        state = game.state
+        if game.kind == "chess":
+            if state["result"]:
+                return {"ok": False, "error": "finished"}
+            if (state["turn"] == "w") != (mark == "w"):
+                return {"ok": False, "error": "not_your_turn"}
+            move = msg.get("move")
+            if not isinstance(move, str):
+                return {"ok": False, "error": "bad_move"}
+            ok, err = chess_move(state, move)
+            if not ok:
+                return {"ok": False, "error": err}
+            if state["result"]:
+                entry = room.push_feed(uid, user["name"], "game", "партия завершена",
+                                       "feed.gameWin" if state["result"] in ("w", "b") else "feed.gameDraw",
+                                       {"name": game.names.get(
+                                           next((p for p, m in game.marks.items() if m == state["result"]), ""), "")}
+                                       if state["result"] in ("w", "b") else {})
+                room.broadcast({"type": "games", "games": room.games_public(), "entry": entry,
+                                "users": room.users_public()})
+                return {"ok": True}
+        else:
+            if state["winner"]:
+                return {"ok": False, "error": "finished"}
+            if state["turn"] != mark:
+                return {"ok": False, "error": "not_your_turn"}
+            cell = msg.get("move")
+            try:
+                cell = int(cell)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "bad_move"}
+            ok, err = ttt_move(state, cell)
+            if not ok:
+                return {"ok": False, "error": err}
+            if state["winner"]:
+                winner_id = next((p for p, m in game.marks.items() if m == state["winner"]), "")
+                entry = room.push_feed(uid, user["name"], "game", "партия завершена",
+                                       "feed.gameDraw" if state["winner"] == "draw" else "feed.gameWin",
+                                       {"name": game.names.get(winner_id, "")})
+                room.broadcast({"type": "games", "games": room.games_public(), "entry": entry,
+                                "users": room.users_public()})
+                return {"ok": True}
+        room.broadcast({"type": "games", "games": room.games_public()})
+        return {"ok": True}
+
+    if kind == "game_reset":
+        game = room.games.get(clean_text(msg.get("gameId"), 12))
+        if not game:
+            return {"ok": False, "error": "bad_game"}
+        if uid not in game.players:
+            return {"ok": False, "error": "not_player"}
+        game.state = new_chess() if game.kind == "chess" else new_tictactoe()
+        game.finished = False
+        room.broadcast({"type": "games", "games": room.games_public()})
+        return {"ok": True}
+
+    # --- сигналинг звонка (WebRTC) -------------------------------------------
+    if kind == "rtc":
+        payload = msg.get("payload")
+        if not isinstance(payload, dict):
+            return {"ok": False, "error": "bad_payload"}
+        target = clean_text(msg.get("target"), 40)
+        if len(json.dumps(payload, ensure_ascii=False)) > 60_000:
+            return {"ok": False, "error": "too_big"}
+        out = {"type": "rtc", "from": uid, "fromName": user["name"], "payload": payload, "target": target}
+        if target and target in room.users:
+            room.broadcast_to(target, out)
+            return {"ok": True}
+        room.broadcast_except(uid, out)
+        return {"ok": True}
+
     return {"ok": False, "error": "unknown_kind"}
+
+
+# --------------------------------------------------------------------------- #
+# Постоянство: комнаты переживают перезапуск сервера
+# --------------------------------------------------------------------------- #
+
+def room_to_json(room: Room) -> dict:
+    return {
+        "code": room.code,
+        "created": room.created,
+        "lastActivity": room.last_activity,
+        "hostId": room.host_id,
+        "frozen": room.frozen,
+        "announcement": room.announcement,
+        "feed": room.feed[-MAX_FEED:],
+        "chat": room.chat[-MAX_CHAT:],
+        "strokes": room.strokes[-MAX_STROKES:],
+        "polls": room.polls[-MAX_POLLS:],
+        "journal": room.journal[-MAX_JOURNAL:],
+        "shared": {"enabled": False, "state": room.shared.get("state"), "by": None},
+    }
+
+
+def save_rooms() -> None:
+    """Пишет комнаты в data/rooms.json атомарно (через временный файл)."""
+    payload = {"saved": now_ms(), "rooms": [room_to_json(r) for r in rooms.values()]}
+    try:
+        tmp = PERSIST_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        os.replace(tmp, PERSIST_FILE)
+    except OSError as err:
+        print(f"[warn] не удалось сохранить комнаты: {err}")
+
+
+def load_rooms() -> int:
+    """Восстанавливает комнаты из data/rooms.json. Возвращает количество комнат."""
+    if not os.path.exists(PERSIST_FILE):
+        return 0
+    try:
+        with open(PERSIST_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as err:
+        print(f"[warn] не удалось прочитать сохранённые комнаты: {err}")
+        return 0
+    count = 0
+    for item in data.get("rooms", []):
+        code = normalize_room_code(item.get("code", ""))
+        if not code:
+            continue
+        room = Room(code)
+        room.created = float(item.get("created", time.time()))
+        room.last_activity = float(item.get("lastActivity", time.time()))
+        room.host_id = item.get("hostId")
+        room.frozen = bool(item.get("frozen"))
+        room.announcement = str(item.get("announcement", ""))[:200]
+        room.feed = [e for e in item.get("feed", []) if isinstance(e, dict)][-MAX_FEED:]
+        room.chat = [m for m in item.get("chat", []) if isinstance(m, dict)][-MAX_CHAT:]
+        room.strokes = [s for s in item.get("strokes", []) if isinstance(s, dict)][-MAX_STROKES:]
+        room.polls = [p for p in item.get("polls", []) if isinstance(p, dict)][-MAX_POLLS:]
+        room.journal = [j for j in item.get("journal", []) if isinstance(j, dict)][-MAX_JOURNAL:]
+        shared = item.get("shared") if isinstance(item.get("shared"), dict) else None
+        if shared:
+            room.shared = {"enabled": False, "state": shared.get("state"), "by": None}
+        rooms[code] = room
+        count += 1
+    return count
+
+
+def persist_worker() -> None:
+    while True:
+        time.sleep(PERSIST_INTERVAL)
+        with lock:
+            save_rooms()
+
+
+# --------------------------------------------------------------------------- #
+# Загрузка медиа на сервер
+# --------------------------------------------------------------------------- #
+
+def uploads_size() -> int:
+    total = 0
+    try:
+        for name in os.listdir(UPLOAD_DIR):
+            path = os.path.join(UPLOAD_DIR, name)
+            if os.path.isfile(path):
+                total += os.path.getsize(path)
+    except OSError:
+        pass
+    return total
+
+
+def prune_uploads() -> None:
+    """Если хранилище переполнено — удаляем самые старые файлы."""
+    try:
+        files = [(os.path.getmtime(os.path.join(UPLOAD_DIR, n)), n)
+                 for n in os.listdir(UPLOAD_DIR) if os.path.isfile(os.path.join(UPLOAD_DIR, n))]
+    except OSError:
+        return
+    files.sort()
+    total = sum(os.path.getsize(os.path.join(UPLOAD_DIR, n)) for _, n in files)
+    for _, name in files:
+        if total <= MAX_UPLOAD_TOTAL:
+            break
+        path = os.path.join(UPLOAD_DIR, name)
+        try:
+            total -= os.path.getsize(path)
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def save_upload(data: bytes, filename: str) -> dict:
+    ext = os.path.splitext(filename.lower())[1]
+    if ext not in UPLOAD_TYPES:
+        return {"ok": False, "error": "bad_type"}
+    if not data or len(data) > MAX_UPLOAD_BYTES:
+        return {"ok": False, "error": "too_big"}
+    name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_DIR, name)
+    try:
+        with open(path, "wb") as fh:
+            fh.write(data)
+    except OSError as err:
+        return {"ok": False, "error": f"io: {err}"}
+    prune_uploads()
+    return {"ok": True, "url": f"/uploads/{name}", "name": filename[:120],
+            "size": len(data), "type": UPLOAD_TYPES[ext], "uploaded": now_ms()}
 
 
 # --------------------------------------------------------------------------- #
@@ -1064,8 +1808,19 @@ class RoomHandler(SimpleHTTPRequestHandler):
                 self._json_response({"ok": True, "rooms": len(rooms), "users": sum(len(r.users) for r in rooms.values()),
                                      "time": now_ms()})
             return
+        if path == "/api/journal":
+            code = normalize_room_code(query.get("room", ["MAIN"])[0])
+            try:
+                limit = max(1, min(MAX_JOURNAL, int(query.get("limit", ["200"])[0])))
+            except (TypeError, ValueError):
+                limit = 200
+            with lock:
+                room = get_room(code, create=False)
+                entries = room.journal[-limit:] if room else []
+            self._json_response({"ok": True, "room": code, "entries": entries})
+            return
         if path == "/api/events":
-            self._sse_stream(query.get("room", ["MAIN"])[0])
+            self._sse_stream(query.get("room", ["MAIN"])[0], query.get("userId", [""])[0])
             return
         if path == "/ws":
             self._websocket(query.get("room", ["MAIN"])[0], query.get("userId", [""])[0])
@@ -1095,6 +1850,9 @@ class RoomHandler(SimpleHTTPRequestHandler):
     # --- POST ----------------------------------------------------------------
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/upload":
+            self._handle_upload()
+            return
         body = self._read_json()
         if path == "/api/join":
             self._handle_join(body)
@@ -1130,6 +1888,22 @@ class RoomHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     # --- утилиты -------------------------------------------------------------
+    def _handle_upload(self) -> None:
+        """Принимает файл «сырым» телом (fetch POST с X-File-Name) — multipart не нужен."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0:
+            self._json_response({"ok": False, "error": "empty"}, 400)
+            return
+        if length > MAX_UPLOAD_BYTES:
+            self._json_response({"ok": False, "error": "too_big"}, 413)
+            return
+        data = self.rfile.read(length)
+        filename = unquote(self.headers.get("X-File-Name", "file") or "file")
+        self._json_response(save_upload(data, filename), 200 if True else 200)
+
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0 or length > 2_000_000:
@@ -1195,11 +1969,12 @@ class RoomHandler(SimpleHTTPRequestHandler):
         self._json_response(payload)
 
     # --- SSE -----------------------------------------------------------------
-    def _sse_stream(self, room_code: str) -> None:
+    def _sse_stream(self, room_code: str, uid: str = "") -> None:
         client_q: queue.Queue = queue.Queue(maxsize=300)
+        client = SSEClient(client_q, uid)
         with lock:
             room = get_room(room_code, create=True)
-            room.sse.append(client_q)
+            room.sse.append(client)
             first = {"type": "snapshot", **room.snapshot()}
 
         self.send_response(200)
@@ -1231,8 +2006,8 @@ class RoomHandler(SimpleHTTPRequestHandler):
                         break
         finally:
             with lock:
-                if client_q in room.sse:
-                    room.sse.remove(client_q)
+                if client in room.sse:
+                    room.sse.remove(client)
 
     # --- WebSocket -----------------------------------------------------------
     def _websocket(self, room_code: str, uid: str) -> None:
@@ -1249,7 +2024,7 @@ class RoomHandler(SimpleHTTPRequestHandler):
         self.wfile.flush()
         self.connection.settimeout(None)
 
-        client = WSClient(self.wfile)
+        client = WSClient(self.wfile, uid)
         with lock:
             room = get_room(room_code, create=True)
             room.ws.append(client)
@@ -1336,6 +2111,10 @@ class ReuseHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def raise_system_exit():
+    raise SystemExit(0)
+
+
 def main() -> None:
     try:
         server = ReuseHTTPServer(("0.0.0.0", PORT), RoomHandler)
@@ -1346,10 +2125,21 @@ def main() -> None:
             raise SystemExit(1) from err
         raise
 
+    restored = 0
+    with lock:
+        restored = load_rooms()
     threading.Thread(target=housekeeping, daemon=True).start()
-    print("Motion Playground — совместный режим (комнаты, чат, WebSocket)")
+    threading.Thread(target=persist_worker, daemon=True).start()
+    atexit.register(lambda: save_rooms())
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, lambda *_: (save_rooms(), raise_system_exit()))
+        except (ValueError, OSError):
+            pass
+    print("Motion Playground — совместный режим (комнаты, чат, WebSocket, игры)")
     print(f"  На этом компьютере:  http://127.0.0.1:{PORT}")
     print(f"  В локальной сети:    http://{LAN_IP}:{PORT}")
+    print(f"  Восстановлено комнат из data/rooms.json: {restored}")
     print("  Остановка: Ctrl+C")
     try:
         server.serve_forever()

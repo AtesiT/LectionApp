@@ -663,6 +663,168 @@ body.konami .stage { animation: konami-glitch 400ms steps(2) 6; }
 body:not(.ready) .app { opacity: 0; }
 body.ready .app { opacity: 1; transition: opacity 400ms; }
 
+/* --- Общая сцена: баннер над сценой -------------------------------------- */
+.shared-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 40; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: calc(100% - 20px); padding: 7px 12px; border-radius: 999px;
+  background: rgba(15, 23, 42, 0.86); border: 1px solid var(--accent);
+  color: var(--foreground); font-size: 13px; box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+}
+.shared-banner .shared-view-switch { display: flex; gap: 4px; }
+.shared-banner .chip-btn.active { background: var(--accent); color: #04121f; border-color: transparent; }
+body.shared-scene .stage { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* --- Звонок (WebRTC) ------------------------------------------------------ */
+.call-wrap {
+  margin-top: 10px; padding: 12px; border-radius: var(--radius-sm);
+  background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(10px);
+}
+.call-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.call-grid {
+  display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  margin-bottom: 8px;
+}
+.call-card {
+  position: relative; border-radius: 14px; overflow: hidden; background: #05070f;
+  border: 1px solid var(--border); aspect-ratio: 4 / 3;
+}
+.call-card video { width: 100%; height: 100%; object-fit: cover; display: block; background: #05070f; }
+.call-name {
+  position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(2, 6, 23, 0.72); font-size: 12px; max-width: calc(100% - 12px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.call-card.self video { transform: scaleX(-1); }
+body.in-call .topbar { border-color: var(--accent); }
+
+/* --- Таймлайн ------------------------------------------------------------- */
+.tl-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 10px 0; }
+.tl-toolbar .field { min-width: 150px; flex: 1 1 150px; }
+.tl-scale { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tl-play { min-width: 44px; font-size: 16px; }
+.tl-ruler {
+  position: relative; flex: 1; height: 26px; border-radius: 8px; cursor: pointer;
+  background: repeating-linear-gradient(90deg, var(--input-bg) 0 1px, transparent 1px 10%);
+  border: 1px solid var(--border);
+}
+.tl-playhead {
+  position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--accent);
+  box-shadow: 0 0 8px var(--accent); pointer-events: none;
+}
+.tl-playhead::before {
+  content: ''; position: absolute; top: -4px; left: -4px; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--accent);
+}
+.tl-lanes { display: grid; gap: 6px; min-height: 60px; }
+.tl-lane { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
+.tl-lane-label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.tl-track {
+  position: relative; height: 26px; border-radius: 8px; background: var(--input-bg);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.tl-seg { position: absolute; top: 50%; height: 3px; transform: translateY(-50%); background: linear-gradient(90deg, var(--accent), var(--accent-2)); opacity: .7; }
+.tl-key {
+  position: absolute; top: 50%; width: 12px; height: 12px; margin-left: -6px; margin-top: -6px;
+  border-radius: 3px; background: var(--foreground); border: 2px solid var(--accent);
+  cursor: grab; transform: rotate(45deg);
+}
+.tl-key.active { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.tl-keys { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.tl-key-item {
+  text-align: left; font-size: 12px; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  background: var(--input-bg); border: 1px solid var(--border); color: var(--muted);
+}
+.tl-key-item.active { border-color: var(--accent); color: var(--foreground); }
+
+/* --- Мини-игры ------------------------------------------------------------ */
+.games-list { display: grid; gap: 12px; margin-top: 12px; }
+.game-card { padding: 10px; border-radius: 14px; background: var(--input-bg); border: 1px solid var(--border); }
+.game-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.game-head h4 { margin: 0; font-size: 14px; }
+.game-status { font-size: 12px; color: var(--accent); }
+.chess-wrap { margin: 10px 0; }
+.chess-board {
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr));
+  width: min(100%, 380px); aspect-ratio: 1; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.chess-cell {
+  display: grid; place-items: center; font-size: clamp(16px, 4.4vw, 26px); line-height: 1;
+  border: none; padding: 0; cursor: pointer; color: #0f172a;
+}
+.chess-cell.light { background: #e9d5b3; }
+.chess-cell.dark { background: #9a7b57; }
+.chess-cell.selected { box-shadow: inset 0 0 0 3px var(--accent); }
+.chess-cell.target::after { content: ''; width: 32%; height: 32%; border-radius: 50%; background: rgba(34, 211, 238, .75); }
+.chess-cell.last { box-shadow: inset 0 0 0 2px var(--warn); }
+.chess-cell.check { background: var(--danger); }
+.chess-files { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); width: min(100%, 380px); }
+.chess-files span { text-align: center; font-size: 10px; color: var(--muted); }
+.ttt-board {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  width: min(100%, 240px); margin: 10px 0; aspect-ratio: 1;
+}
+.ttt-cell {
+  border-radius: 12px; background: var(--input-bg); border: 1px solid var(--border);
+  font-size: clamp(20px, 6vw, 30px); cursor: pointer; display: grid; place-items: center;
+}
+.ttt-cell.win { border-color: var(--ok); box-shadow: 0 0 12px rgba(52, 211, 153, .5); }
+.snake-canvas {
+  display: block; width: 100%; max-width: 396px; height: auto; border-radius: 12px;
+  border: 1px solid var(--border); background: #0b1020; margin: 8px 0; image-rendering: pixelated;
+}
+.snake-score { font-size: 14px; margin: 6px 0; }
+.snake-pad { display: grid; gap: 6px; justify-items: center; margin-bottom: 8px; }
+.snake-pad-row { display: flex; gap: 6px; }
+.snake-pad button { min-width: 52px; font-size: 18px; }
+.rps-btn { font-size: 16px; }
+.rps-result { font-size: 14px; margin: 8px 0; }
+
+/* --- Песочница «Порошок» -------------------------------------------------- */
+.powder-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 10px; }
+.powder-toolbar .field { min-width: 130px; flex: 1 1 130px; }
+.powder-stage {
+  border-radius: 14px; overflow: hidden; border: 1px solid var(--border);
+  background: radial-gradient(circle at 50% 0%, #131a2e, #05070f 70%);
+  display: flex; justify-content: center; padding: 4px;
+}
+#powderCanvas { display: block; max-width: 100%; touch-action: none; cursor: crosshair; }
+.powder-palette { display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.powder-group-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.powder-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.powder-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px;
+  border-radius: 999px; background: var(--input-bg); border: 1px solid var(--border);
+  color: var(--foreground); cursor: pointer; min-height: 30px;
+}
+.powder-chip.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.powder-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
+/* --- Журнал занятия ------------------------------------------------------- */
+.journal-list { list-style: none; margin: 8px 0; padding: 0; max-height: 300px; overflow-y: auto; display: grid; gap: 4px; }
+.journal-item {
+  display: grid; grid-template-columns: auto auto 1fr auto; gap: 6px; align-items: baseline;
+  font-size: 12px; padding: 5px 6px; border-radius: 8px; background: var(--input-bg);
+}
+.journal-time { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.journal-text { overflow: hidden; text-overflow: ellipsis; }
+.journal-user { color: var(--accent); font-size: 11px; }
+
+/* --- Плагины -------------------------------------------------------------- */
+.plugin-code {
+  width: 100%; margin: 8px 0; padding: 10px; border-radius: 12px; resize: vertical;
+  background: #05070f; color: #e2e8f0; border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+}
+.plugin-log {
+  margin-top: 8px; padding: 8px; border-radius: 10px; background: #05070f;
+  border: 1px solid var(--border); max-height: 180px; overflow-y: auto;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.plugin-log-line { white-space: pre-wrap; word-break: break-word; }
+
 @media (prefers-reduced-motion: reduce) {
   .panel, .card, .toast, .entry-card, .user-model-card, .feed-item, .chat-msg { animation: none !important; }
 }
@@ -753,6 +915,11 @@ body { overflow-x: hidden; }
   .modal-card { padding: 12px; border-radius: 16px; max-height: 94vh; }
   .peek-stage { height: clamp(180px, 40vh, 260px); }
   .feed-item, .chat-msg { font-size: 12px; }
+  .tl-lane { grid-template-columns: 76px 1fr; }
+  .chess-board, .chess-files { width: 100%; }
+  .journal-item { grid-template-columns: auto 1fr; }
+  .journal-user { display: none; }
+  .powder-palette { max-height: 40vh; }
   .entry-card { padding: 16px; }
   .toasts { bottom: 6px; }
   .footer { font-size: 11px; }

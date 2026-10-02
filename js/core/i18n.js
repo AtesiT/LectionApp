@@ -462,6 +462,96 @@ const dict = {
     'hk.v': 'Голосовое управление', 'hk.c': 'Фокус в чат', 'hk.l': 'Сменить язык', 'hk.help': 'Эта подсказка', 'hk.palette': 'Командная палитра',
     'hk.undo': 'Отменить', 'hk.redo': 'Повторить', 'hk.esc': 'Закрыть окно / выйти из режима', 'hk.arrows': 'Сдвинуть активный объект',
     'hk.del': 'Удалить активный объект', 'hk.n': 'Добавить объект',
+
+    // --- мини-игры ---
+    'tab.games': 'Мини-игры', 'tab.powder': 'Песочница', 'tab.timeline': 'Таймлайн',
+    'games.title': 'Мини-игры', 'games.forTwo': 'Для двоих',
+    'games.hint': 'Создайте шахматы или крестики-нолики — любой участник комнаты сможет присоединиться и ходить на этой же доске. Змейка и камень-ножницы-бумага играются локально.',
+    'games.chess': '♟ Шахматы', 'games.ttt': '⭕ Крестики-нолики', 'games.snake': '🐍 Змейка', 'games.rps': '✊ Камень-ножницы-бумага',
+    'games.join': 'Присоединиться', 'games.watch': 'Смотреть', 'games.leave': 'Выйти', 'games.reset': 'Заново', 'games.close': 'Закрыть',
+    'games.waiting': 'Ждём второго игрока…', 'games.you': 'вы', 'games.turn': 'Ход: {name}',
+    'games.white': 'Белые', 'games.black': 'Чёрные', 'games.win': 'Победил {name}', 'games.draw': 'Ничья',
+    'games.check': 'Шах!', 'games.mate': 'Мат!', 'games.finished': 'Партия уже завершена',
+    'games.watching': 'Вы смотрите партию: ходить могут только игроки',
+    'games.created': 'Игра создана — ждите соперника', 'games.joined': 'Вы присоединились к игре',
+    'games.restarted': 'Партия начата заново', 'games.notYourTurn': 'Сейчас не ваш ход',
+    'games.full': 'В игре уже два игрока', 'games.error': 'Такой ход сделать нельзя',
+    'games.empty': 'Игр пока нет. Создайте шахматы или крестики-нолики и позовите соседа по комнате.',
+    'games.offlineHint': 'Игры доступны, когда вы подключены к комнате',
+    'games.moves': 'Ходов',
+    'snake.title': 'Змейка', 'snake.score': 'Счёт: {n}', 'snake.best': 'Рекорд: {n}',
+    'snake.restart': '🔄 Заново', 'snake.pause': '⏸ Пауза', 'snake.play': '▶ Продолжить',
+    'snake.gameover': 'Игра окончена', 'snake.paused': 'Пауза', 'snake.restartHint': 'Нажмите «Заново»',
+    'rps.title': 'Камень, ножницы, бумага', 'rps.pick': 'Ваш выбор:', 'rps.rock': 'Камень', 'rps.scissors': 'Ножницы', 'rps.paper': 'Бумага',
+    'rps.you': 'Вы: {v}', 'rps.bot': 'Компьютер: {v}', 'rps.win': 'Вы выиграли!', 'rps.lose': 'Выиграл компьютер', 'rps.tie': 'Ничья',
+    'rps.score': 'Счёт {a}:{b}',
+
+    // --- таймлайн ---
+    'tl.title': 'Таймлайн (ключевые кадры)',
+    'tl.hint': 'Выберите объект и свойство, нажмите «＋ Ключ» — значение запомнится. Между ключами значения считаются сами, цвет смешивается плавно.',
+    'tl.props': 'Свойство', 'tl.add': '＋ Ключ', 'tl.delete': 'Удалить ключ', 'tl.clear': 'Очистить',
+    'tl.duration': 'Длительность: {s} с', 'tl.loop': 'Зациклить', 'tl.stop': '⏹ Стоп', 'tl.keys': 'Все ключи',
+    'tl.x': 'X', 'tl.y': 'Y', 'tl.size': 'Размер', 'tl.opacity': 'Прозрачность', 'tl.glow': 'Свечение', 'tl.radius': 'Скругление', 'tl.color': 'Цвет',
+    'tl.selectKey': 'Сначала выберите ключевой кадр', 'tl.cleared': 'Таймлайн очищен',
+    'tl.empty': 'Дорожек пока нет: выберите объект, свойство и нажмите «＋ Ключ».',
+    'tl.noKeys': 'Ключевых кадров нет',
+
+    // --- запись и экспорт ---
+    'export.title': 'Запись и экспорт сцены',
+    'export.hint': 'Запишите всю сцену (фон, эффекты, объекты и доску) в видео или GIF — файл скачается сам. CSS и HTML пригодятся, чтобы вставить анимацию на свой сайт.',
+    'export.video': '⏺ Видео сцены', 'export.videoStop': '⏹ Остановить', 'export.gif': '🎞 GIF 4 с',
+    'export.css': '📄 CSS-код', 'export.html': '📄 HTML-файл',
+    'export.recording': 'Запись', 'export.sec': 'с', 'export.recStarted': 'Запись сцены начата',
+    'export.gifProgress': 'Готовим GIF…', 'export.gifSaved': 'GIF сохранён', 'export.gifFail': 'Не удалось собрать GIF',
+    'export.videoSaved': 'Видео сцены сохранено', 'export.cssSaved': 'CSS сохранён', 'export.htmlSaved': 'HTML сохранён',
+    'export.noObject': 'Сначала выберите объект',
+
+    // --- звонок (WebRTC) ---
+    'call.title': 'Звонок и демонстрация экрана',
+    'call.hint': 'Видео и звук идут напрямую между браузерами (WebRTC), сервер только помогает им познакомиться. Можно показать экран.',
+    'call.btn': '📞 Начать звонок', 'call.hangup': '📞 Завершить', 'call.screen': '🖥 Экран', 'call.mic': '🎤 Микрофон', 'call.cam': '🎥 Камера',
+    'call.unsupported': 'Браузер не поддерживает видеозвонки', 'call.noDevice': 'Нет доступа к камере или микрофону',
+    'call.started': 'Звонок начат', 'call.stopped': 'Звонок завершён',
+    'call.screenOn': 'Демонстрация экрана включена', 'call.screenOff': 'Демонстрация экрана выключена', 'call.screenFail': 'Не удалось показать экран',
+    'call.startFirst': 'Сначала начните звонок', 'call.you': 'вы', 'call.status': 'В звонке: {n} чел.',
+    'call.participant': 'Участник',
+
+    // --- общая сцена ---
+    'shared.title': 'Общая сцена',
+    'shared.hint': 'Включите общую сцену — и все участники будут управлять одной и той же сценой. Каждый может переключаться между общей и своей сценой.',
+    'shared.toggle': 'Общая сцена для всех участников', 'shared.on': 'Общая сцена включена', 'shared.off': 'Общая сцена выключена',
+    'shared.viewShared': 'Общая', 'shared.viewMine': 'Моя',
+    'shared.bannerShared': 'Общая сцена (включил {name})', 'shared.bannerMine': 'Ваша сцена · общая включена ({name})',
+    'shared.stop': 'Выключить', 'shared.hide': 'Скрыть', 'shared.view': 'Показывать',
+
+    // --- журнал занятия ---
+    'journal.title': 'Журнал занятия', 'journal.hint': 'История комнаты хранится на сервере: кто заходил, что делал, во что играл. Переживает перезапуск сервера.',
+    'journal.refresh': 'Обновить', 'journal.copy': '📋 Скопировать', 'journal.save': '💾 Markdown',
+    'journal.empty': 'Журнал пуст', 'journal.loaded': 'Записей в журнале: {n}',
+    'journal.copied': 'Журнал скопирован', 'journal.copyFail': 'Не удалось скопировать', 'journal.saved': 'Журнал сохранён',
+
+    // --- плагины ---
+    'plugins.title': 'Плагины (API)', 'plugins.hint': 'Напишите код — он получит объект motion и сможет управлять сценой, объектами и чатом. Внутри плагина нет window, document и fetch: только наше API.',
+    'plugins.example': 'Пример', 'plugins.run': '▶ Запустить', 'plugins.stop': '⏹ Остановить', 'plugins.clear': '🧹 Очистить лог',
+    'plugins.bad': 'Ошибка в коде плагина', 'plugins.ok': 'Плагин запущен', 'plugins.stopped': 'Плагины остановлены',
+    'plugins.empty': 'Сначала напишите код плагина',
+    'plugins.ph': '// motion.updateActive({ color: \'#F472B6\' })',
+
+    // --- песочница ---
+    'powder.title': 'Песочница «Порошок»', 'powder.elements': 'Элементы', 'powder.tools': 'Инструменты',
+    'powder.hint': 'Рисуйте мышью или пальцем: элементы падают, текут, горят и реагируют друг с другом.',
+    'powder.tips': 'Вода тушит огонь, лава плавит лёд и снег, кислота ест почти всё, порох и газ взрываются, растения растут в воде, ток бежит по металлу, пустота стирает соседей.',
+    'powder.eraser': 'Ластик', 'powder.play': '▶ Старт', 'powder.pause': '⏸ Пауза', 'powder.step': '⏭ Шаг', 'powder.clear': '🧹 Очистить',
+    'powder.brush': 'Кисть', 'powder.demo': 'Пример', 'powder.fps': 'Кадров/с', 'powder.cells': 'клеток',
+    'powder.demoVolcano': '🌋 Вулкан', 'powder.demoRain': '🌧 Дождь', 'powder.demoChemistry': '🧪 Химия',
+    'powder.demoCircuit': '⚡ Электричество', 'powder.demoFireworks': '🎆 Фейерверк', 'powder.demoEmpty': 'Пусто',
+
+    // --- прочее ---
+    'obj.imageUploaded': 'Картинка загружена на сервер', 'obj.videoUploaded': 'Видео загружено на сервер',
+    'scene.imageUploaded': 'Картинка фона загружена на сервер', 'scene.videoUploaded': 'Видео фона загружено на сервер',
+    'feed.sharedOn': '{name} включил общую сцену', 'feed.sharedOff': '{name} вернул каждому свою сцену',
+    'feed.gameCreate': '{name} создал шахматную партию', 'feed.gameCreateTTT': '{name} создал игру в крестики-нолики',
+    'feed.gameJoin': '{name} присоединился к игре', 'feed.gameWin': 'Победил {name}', 'feed.gameDraw': 'Ничья',
   },
 
   en: {
@@ -630,7 +720,127 @@ const dict = {
     'hk.space': 'Start / Stop', 'hk.digits': 'Toggle animation #', 'hk.t': 'Next theme', 'hk.d': 'Toggle 3D', 'hk.r': 'Random scene', 'hk.f': 'Fullscreen',
     'hk.p': 'Presentation mode', 'hk.b': 'Board mode', 'hk.m': 'Toggle sound', 'hk.v': 'Voice control', 'hk.c': 'Focus chat', 'hk.l': 'Switch language',
     'hk.help': 'This help', 'hk.palette': 'Command palette', 'hk.undo': 'Undo', 'hk.redo': 'Redo', 'hk.esc': 'Close dialog / leave mode',
+    // --- доска: запись, скриншот, повтор (добавлено во второй версии) ---
+    'board.record': '⏺ Record', 'board.recStop': '⏹ Stop', 'board.recording': 'Board recording: {s} s',
+    'board.recSaved': 'Board recording saved to a file',
+    'board.recFail': 'This browser cannot record video from a canvas',
+    'board.shot': '📷 Screenshot', 'board.shotSaved': 'Scene screenshot saved',
+    'board.replay': '↻ Replay', 'board.replaying': 'Replaying the drawing…',
+    'board.replayEmpty': 'Nothing to replay on the board yet',
+
+    // --- медиа: картинки и видео ---
+    'obj.imageAdded': 'Image added ({kb} KB) — everyone will see it',
+    'obj.imageFail': 'Could not process the image',
+    'obj.mediaHint': 'Images are compressed and shared as a whole. Video from YouTube, Rutube and VK is visible to everyone by link; a file over 90 KB stays local.',
+    'obj.videoAdded': 'Video added — all participants will see it',
+    'obj.videoApply': 'Set video',
+    'obj.videoBadUrl': 'Could not parse the link. Need YouTube, Rutube, VK or an mp4/webm file',
+    'obj.videoFail': 'Could not read the video',
+    'obj.videoFile': 'Video file',
+    'obj.videoLinked': 'Video connected: {provider}',
+    'obj.videoLocal': 'Video added (not shared — the file is large)',
+    'obj.videoLocalOnly': 'The video exists only on the author\'s side (file is not shared)',
+    'obj.videoPick': 'Pick a video or paste a link',
+    'obj.videoTooBig': 'Video is over 12 MB — choose a smaller file',
+    'obj.videoUrl': 'Video link',
+    'obj.videoUrlPh': 'YouTube / Rutube / VK / mp4',
+
+    // --- погода ---
+    'weather.allFail': 'No weather source answered',
+    'weather.cached': 'Offline — showing saved data',
+    'weather.retry': 'Try another source',
+    'weather.source': 'Source: {source}',
     'hk.arrows': 'Nudge the active object', 'hk.del': 'Delete the active object', 'hk.n': 'Add object',
+
+    // --- mini-games ---
+    'tab.games': 'Mini-games', 'tab.powder': 'Sandbox', 'tab.timeline': 'Timeline',
+    'games.title': 'Mini-games', 'games.forTwo': 'Two players',
+    'games.hint': 'Create chess or tic-tac-toe — anyone in the room can join and play on the same board. Snake and rock-paper-scissors are local.',
+    'games.chess': '♟ Chess', 'games.ttt': '⭕ Tic-tac-toe', 'games.snake': '🐍 Snake', 'games.rps': '✊ Rock paper scissors',
+    'games.join': 'Join', 'games.watch': 'Watch', 'games.leave': 'Leave', 'games.reset': 'Restart', 'games.close': 'Close',
+    'games.waiting': 'Waiting for the second player…', 'games.you': 'you', 'games.turn': 'Turn: {name}',
+    'games.white': 'White', 'games.black': 'Black', 'games.win': '{name} won', 'games.draw': 'Draw',
+    'games.check': 'Check!', 'games.mate': 'Checkmate!', 'games.finished': 'The game is over',
+    'games.watching': 'You are watching — only players can move',
+    'games.created': 'Game created — wait for an opponent', 'games.joined': 'You joined the game',
+    'games.restarted': 'Game restarted', 'games.notYourTurn': 'Not your turn',
+    'games.full': 'The game already has two players', 'games.error': 'Illegal move',
+    'games.empty': 'No games yet. Create chess or tic-tac-toe and invite someone from the room.',
+    'games.offlineHint': 'Games need a room connection',
+    'games.moves': 'Moves',
+    'snake.title': 'Snake', 'snake.score': 'Score: {n}', 'snake.best': 'Best: {n}',
+    'snake.restart': '🔄 Restart', 'snake.pause': '⏸ Pause', 'snake.play': '▶ Resume',
+    'snake.gameover': 'Game over', 'snake.paused': 'Paused', 'snake.restartHint': 'Press Restart',
+    'rps.title': 'Rock, paper, scissors', 'rps.pick': 'Your pick:', 'rps.rock': 'Rock', 'rps.scissors': 'Scissors', 'rps.paper': 'Paper',
+    'rps.you': 'You: {v}', 'rps.bot': 'Computer: {v}', 'rps.win': 'You win!', 'rps.lose': 'Computer wins', 'rps.tie': 'Tie',
+    'rps.score': 'Score {a}:{b}',
+
+    // --- timeline ---
+    'tl.title': 'Timeline (keyframes)',
+    'tl.hint': 'Pick an object and a property, press “+ Key” — the value is remembered. Between keys values are interpolated, colors blend smoothly.',
+    'tl.props': 'Property', 'tl.add': '＋ Key', 'tl.delete': 'Delete key', 'tl.clear': 'Clear',
+    'tl.duration': 'Duration: {s} s', 'tl.loop': 'Loop', 'tl.stop': '⏹ Stop', 'tl.keys': 'All keys',
+    'tl.x': 'X', 'tl.y': 'Y', 'tl.size': 'Size', 'tl.opacity': 'Opacity', 'tl.glow': 'Glow', 'tl.radius': 'Radius', 'tl.color': 'Color',
+    'tl.selectKey': 'Select a keyframe first', 'tl.cleared': 'Timeline cleared',
+    'tl.empty': 'No tracks yet: pick an object, a property and press “+ Key”.',
+    'tl.noKeys': 'No keyframes',
+
+    // --- recording and export ---
+    'export.title': 'Record and export',
+    'export.hint': 'Record the whole scene (background, effects, objects and the board) to video or GIF — the file downloads itself. CSS and HTML help you embed the animation into your own site.',
+    'export.video': '⏺ Scene video', 'export.videoStop': '⏹ Stop', 'export.gif': '🎞 GIF 4 s',
+    'export.css': '📄 CSS code', 'export.html': '📄 HTML file',
+    'export.recording': 'Recording', 'export.sec': 's', 'export.recStarted': 'Scene recording started',
+    'export.gifProgress': 'Building GIF…', 'export.gifSaved': 'GIF saved', 'export.gifFail': 'Could not build the GIF',
+    'export.videoSaved': 'Scene video saved', 'export.cssSaved': 'CSS saved', 'export.htmlSaved': 'HTML saved',
+    'export.noObject': 'Select an object first',
+
+    // --- call (WebRTC) ---
+    'call.title': 'Call and screen sharing',
+    'call.hint': 'Audio and video flow directly between browsers (WebRTC); the server only helps them meet. You can share your screen.',
+    'call.btn': '📞 Start call', 'call.hangup': '📞 Hang up', 'call.screen': '🖥 Screen', 'call.mic': '🎤 Mic', 'call.cam': '🎥 Camera',
+    'call.unsupported': 'This browser cannot make video calls', 'call.noDevice': 'No access to camera or microphone',
+    'call.started': 'Call started', 'call.stopped': 'Call ended',
+    'call.screenOn': 'Screen sharing on', 'call.screenOff': 'Screen sharing off', 'call.screenFail': 'Could not share the screen',
+    'call.startFirst': 'Start the call first', 'call.you': 'you', 'call.status': 'In call: {n}',
+    'call.participant': 'Participant',
+
+    // --- shared scene ---
+    'shared.title': 'Shared scene',
+    'shared.hint': 'Turn on the shared scene and everyone works on the same canvas. Each participant can switch between the shared scene and their own.',
+    'shared.toggle': 'Shared scene for all participants', 'shared.on': 'Shared scene is on', 'shared.off': 'Shared scene is off',
+    'shared.viewShared': 'Shared', 'shared.viewMine': 'Mine',
+    'shared.bannerShared': 'Shared scene (enabled by {name})', 'shared.bannerMine': 'Your scene · shared is on ({name})',
+    'shared.stop': 'Turn off', 'shared.hide': 'Hide', 'shared.view': 'Show',
+
+    // --- journal ---
+    'journal.title': 'Lesson journal', 'journal.hint': 'The room history lives on the server: who joined, what happened, what was played. It survives a server restart.',
+    'journal.refresh': 'Refresh', 'journal.copy': '📋 Copy', 'journal.save': '💾 Markdown',
+    'journal.empty': 'The journal is empty', 'journal.loaded': 'Journal entries: {n}',
+    'journal.copied': 'Journal copied', 'journal.copyFail': 'Could not copy', 'journal.saved': 'Journal saved',
+
+    // --- plugins ---
+    'plugins.title': 'Plugins (API)', 'plugins.hint': 'Write code — it gets a motion object and can drive the scene, objects and chat. window, document and fetch are not available inside: only our API.',
+    'plugins.example': 'Example', 'plugins.run': '▶ Run', 'plugins.stop': '⏹ Stop', 'plugins.clear': '🧹 Clear log',
+    'plugins.bad': 'Plugin error', 'plugins.ok': 'Plugin started', 'plugins.stopped': 'Plugins stopped',
+    'plugins.empty': 'Write some plugin code first',
+    'plugins.ph': '// motion.updateActive({ color: \'#F472B6\' })',
+
+    // --- powder sandbox ---
+    'powder.title': 'Powder sandbox', 'powder.elements': 'Elements', 'powder.tools': 'Tools',
+    'powder.hint': 'Draw with the mouse or a finger: elements fall, flow, burn and react with each other.',
+    'powder.tips': 'Water puts out fire, lava melts ice and snow, acid eats almost everything, gunpowder and gas explode, plants grow in water, current runs along metal, void erases neighbours.',
+    'powder.eraser': 'Eraser', 'powder.play': '▶ Start', 'powder.pause': '⏸ Pause', 'powder.step': '⏭ Step', 'powder.clear': '🧹 Clear',
+    'powder.brush': 'Brush', 'powder.demo': 'Preset', 'powder.fps': 'FPS', 'powder.cells': 'cells',
+    'powder.demoVolcano': '🌋 Volcano', 'powder.demoRain': '🌧 Rain', 'powder.demoChemistry': '🧪 Chemistry',
+    'powder.demoCircuit': '⚡ Electricity', 'powder.demoFireworks': '🎆 Fireworks', 'powder.demoEmpty': 'Empty',
+
+    // --- misc ---
+    'obj.imageUploaded': 'Image uploaded to the server', 'obj.videoUploaded': 'Video uploaded to the server',
+    'scene.imageUploaded': 'Background image uploaded to the server', 'scene.videoUploaded': 'Background video uploaded to the server',
+    'feed.sharedOn': '{name} enabled the shared scene', 'feed.sharedOff': '{name} gave everyone their own scene back',
+    'feed.gameCreate': '{name} started a chess game', 'feed.gameCreateTTT': '{name} started tic-tac-toe',
+    'feed.gameJoin': '{name} joined the game', 'feed.gameWin': '{name} won', 'feed.gameDraw': 'Draw',
   },
 };
 

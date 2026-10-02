@@ -101,6 +101,154 @@ const { value } = await sse.body.getReader().read();
 check('первое SSE-событие — снимок', new TextDecoder().decode(value).includes('"snapshot"'));
 ctrl.abort();
 
+// --- мини-игры: шахматы и крестики-нолики ---------------------------------------
+// Боба исключили выше — пусть зайдёт снова, игры рассчитаны на двоих.
+const b2 = await post('/api/join', { name: 'Bob2', avatar: '🤖', room, state: { theme: 'dark' } });
+const B2 = await connect(b2, room);
+await sleep(300);
+
+send(A, { kind: 'game_create', game: 'chess', reqId: 'g1' });
+await sleep(300);
+const created = replyFor(A, 'g1');
+check('шахматная партия создана', created?.ok === true && typeof created.gameId === 'string', JSON.stringify(created));
+const gameId = created?.gameId;
+check('игра разослана всем участникам', B2.got.some((m) => m.type === 'games' && m.games?.some((g) => g.id === gameId)));
+send(B2, { kind: 'game_join', gameId, reqId: 'g2' });
+await sleep(300);
+check('второй игрок присоединился', replyFor(B2, 'g2')?.ok === true, JSON.stringify(replyFor(B2, 'g2')));
+let gamesMsg = [...B2.got].reverse().find((m) => m.type === 'games' && m.games?.length);
+let chess = gamesMsg?.games.find((g) => g.id === gameId);
+check('в партии два игрока и счётчик хода', chess?.players?.length === 2 && chess?.waiting === false);
+check('доска 64 клетки', chess?.state?.board?.length === 64);
+check('клиент получает легальные ходы', (chess?.state?.legal?.e2 || []).length === 2 && (chess?.state?.legal?.g1 || []).length === 2,
+  JSON.stringify(chess?.state?.legal?.e2));
+send(B2, { kind: 'game_join', gameId, reqId: 'g2b' });
+send(A, { kind: 'game_create', game: 'chess2', reqId: 'g2c' });
+await sleep(200);
+check('неизвестная игра отклонена', replyFor(A, 'g2c')?.error === 'bad_game');
+send(B2, { kind: 'game_move', gameId, move: 'e2e4', reqId: 'g3' });
+await sleep(250);
+check('ход не в свою очередь отклонён', replyFor(B2, 'g3')?.error === 'not_your_turn', JSON.stringify(replyFor(B2, 'g3')));
+send(A, { kind: 'game_move', gameId, move: 'e2e5', reqId: 'g4' });
+await sleep(250);
+check('нелегальный ход отклонён', replyFor(A, 'g4')?.error === 'illegal', JSON.stringify(replyFor(A, 'g4')));
+send(A, { kind: 'game_move', gameId, move: 'e2e4', reqId: 'g5' });
+await sleep(300);
+check('ход белых принят', replyFor(A, 'g5')?.ok === true, JSON.stringify(replyFor(A, 'g5')));
+gamesMsg = [...A.got].reverse().find((m) => m.type === 'games' && m.games?.length);
+chess = gamesMsg?.games.find((g) => g.id === gameId);
+check('пешка перешла с e2 на e4', chess?.state?.board[52] === null && chess?.state?.board[36] === 'wP',
+  JSON.stringify([chess?.state?.board[52], chess?.state?.board[36]]));
+check('ход перешёл чёрным', chess?.state?.turn === 'b');
+
+send(A, { kind: 'game_create', game: 'tictactoe', reqId: 'g6' });
+await sleep(300);
+const tttId = replyFor(A, 'g6')?.gameId;
+send(B2, { kind: 'game_join', gameId: tttId, reqId: 'g7' });
+await sleep(300);
+for (const [who, cell, req] of [[A, 0, 'g8'], [B2, 4, 'g9'], [A, 1, 'g10'], [B2, 5, 'g11'], [A, 2, 'g12']]) {
+  send(who, { kind: 'game_move', gameId: tttId, move: cell, reqId: req });
+  await sleep(200);
+}
+gamesMsg = [...A.got].reverse().find((m) => m.type === 'games' && m.games?.length);
+let ttt = gamesMsg?.games.find((g) => g.id === tttId);
+check('крестики-нолики: победа по верхней линии', ttt?.state?.winner === 'x' && JSON.stringify(ttt?.state?.line) === '[0,1,2]',
+  JSON.stringify(ttt?.state));
+check('победа попала в ленту', [...A.got, ...B2.got].some((m) => m.entry?.textKey === 'feed.gameWin'));
+send(A, { kind: 'game_move', gameId: tttId, move: 8, reqId: 'g13' });
+await sleep(200);
+check('ход в завершённой партии отклонён', replyFor(A, 'g13')?.error === 'finished', JSON.stringify(replyFor(A, 'g13')));
+send(A, { kind: 'game_reset', gameId: tttId, reqId: 'g14' });
+await sleep(300);
+gamesMsg = [...A.got].reverse().find((m) => m.type === 'games' && m.games?.length);
+ttt = gamesMsg?.games.find((g) => g.id === tttId);
+check('партия начата заново', ttt?.state?.board.every((c) => c === null) && ttt?.state?.winner === null);
+send(B2, { kind: 'game_reset', gameId: 'нет-такой', reqId: 'g15' });
+await sleep(200);
+check('сброс несуществующей игры отклонён', replyFor(B2, 'g15')?.error === 'bad_game');
+send(B2, { kind: 'game_leave', gameId: tttId, reqId: 'g16' });
+await sleep(300);
+check('выход из партии принят', replyFor(B2, 'g16')?.ok === true);
+
+// --- общая сцена -------------------------------------------------------------------
+send(B2, { kind: 'shared_enable', state: { theme: 'forest' }, reqId: 's1' });
+await sleep(250);
+check('включить общую сцену может только ведущий', replyFor(B2, 's1')?.error === 'host_only', JSON.stringify(replyFor(B2, 's1')));
+send(A, { kind: 'shared_enable', state: { theme: 'forest' }, reqId: 's2' });
+await sleep(300);
+check('общая сцена включена', replyFor(A, 's2')?.ok === true);
+check('режим общей сцены разослан', B2.got.some((m) => m.type === 'shared' && m.enabled === true && m.state?.theme === 'forest'));
+const snapShared = await (await fetch(`${base}/api/room?room=${room}`)).json();
+check('общая сцена видна в снимке комнаты', snapShared.shared?.enabled === true && snapShared.shared?.state?.theme === 'forest',
+  JSON.stringify(snapShared.shared));
+send(B2, { kind: 'shared_update', state: { theme: 'ocean' }, reqId: 's3' });
+await sleep(300);
+check('правка общей сцены разослана', A.got.some((m) => m.type === 'shared' && m.state?.theme === 'ocean'));
+send(A, { kind: 'shared_disable', reqId: 's4' });
+await sleep(300);
+check('общая сцена выключена', B2.got.some((m) => m.type === 'shared' && m.enabled === false));
+
+// --- сигналинг звонка (WebRTC) ------------------------------------------------------
+send(A, { kind: 'rtc', payload: { type: 'offer', sdp: 'test' }, target: b2.userId, reqId: 'c1' });
+await sleep(300);
+check('сигналинг доставлен адресату', B2.got.some((m) => m.type === 'rtc' && m.from === a.userId && m.payload?.type === 'offer'));
+check('сигналинг не возвращается отправителю', !A.got.some((m) => m.type === 'rtc'));
+send(A, { kind: 'rtc', payload: 'not-a-dict', reqId: 'c2' });
+await sleep(250);
+check('сигналинг без полезной нагрузки отклонён', replyFor(A, 'c2')?.error === 'bad_payload');
+
+// --- журнал занятия ---------------------------------------------------------------------
+const jour = await (await fetch(`${base}/api/journal?room=${room}&limit=100`)).json();
+check('журнал занятия отдаётся по API', jour.ok === true && Array.isArray(jour.entries) && jour.entries.length > 3,
+  JSON.stringify(jour).slice(0, 120));
+check('в журнале есть входы участников', jour.entries?.some((e) => e.type === 'join'));
+check('в журнале есть игры', jour.entries?.some((e) => e.type === 'game'));
+check('в журнале есть объявление', jour.entries?.some((e) => e.type === 'announce'));
+const jourEmpty = await (await fetch(`${base}/api/journal?room=ZZZZ`)).json();
+check('журнал несуществующей комнаты пуст', jourEmpty.ok === true && jourEmpty.entries.length === 0);
+
+// --- загрузка медиа на сервер -----------------------------------------------------------
+const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+const up = await fetch(base + '/api/upload', {
+  method: 'POST', headers: { 'content-type': 'image/png', 'x-file-name': 'test.png' }, body: png,
+});
+const upJson = await up.json();
+check('картинка загружена на сервер', upJson.ok === true && String(upJson.url || '').startsWith('/uploads/'),
+  JSON.stringify(upJson).slice(0, 160));
+if (upJson.ok) {
+  const got = await fetch(base + upJson.url);
+  check('загруженный файл отдаётся обратно', got.status === 200 && (got.headers.get('content-type') || '').includes('image/png'));
+}
+const upBad = await fetch(base + '/api/upload', {
+  method: 'POST', headers: { 'content-type': 'text/x-python', 'x-file-name': 'bad.py' }, body: new Uint8Array([1, 2, 3]),
+});
+check('опасный тип файла отклонён', (await upBad.json()).error === 'bad_type');
+
+// --- постоянство: комнаты переживают перезапуск сервера -----------------------------------
+// Сервер сбрасывает комнаты в data/rooms.json каждые 15 с — дождёмся файла.
+const fs = await import('node:fs');
+const path = await import('node:path');
+const persistFile = path.join(process.cwd(), 'data', 'rooms.json');
+let saved = null;
+for (let i = 0; i < 14; i += 1) {
+  await sleep(2000);
+  try {
+    const raw = JSON.parse(fs.readFileSync(persistFile, 'utf8'));
+    const mine = (raw.rooms || []).find((r) => r.code === room);
+    // ждём свежего снимка: в нём уже должен быть журнал и общая сцена
+    if (mine && (mine.journal || []).length > 0 && mine.shared?.state?.theme === 'ocean') { saved = raw; break; }
+    if (mine) saved = raw;
+  } catch { /* файл ещё не записан */ }
+}
+check('комната сохранена на диск', Boolean(saved), persistFile);
+if (saved) {
+  const mine = saved.rooms.find((r) => r.code === room);
+  check('в сохранённой комнате есть чат и лента', Array.isArray(mine.chat) && Array.isArray(mine.feed));
+  check('в сохранённой комнате есть журнал', Array.isArray(mine.journal) && mine.journal.length > 0);
+  check('в сохранённой комнате есть общая сцена', mine.shared && mine.shared.state?.theme === 'ocean');
+}
+
+
 // --- внешние API через прокси (с офлайн-запасом) ---------------------------------
 const quote = await (await fetch(`${base}/api/ext/quote?lang=ru`)).json();
 check('цитата дня (сеть или офлайн-набор)', quote.ok === true && typeof quote.text === 'string' && quote.text.length > 0);
@@ -137,7 +285,7 @@ for (const p of ['/room_server.py', '/README_RU.txt', '/.git/HEAD', '/run_local_
   check(`скрыт файл ${p}`, r.status === 404, `status ${r.status}`);
 }
 
-A.ws.close(); B.ws.close();
+A.ws.close(); B.ws.close(); B2.ws.close();
 console.log(`\nПроверок пройдено: ${passed}`);
 if (failures.length) { console.log(`ОШИБКИ (${failures.length}):\n - ${failures.join('\n - ')}`); process.exit(1); }
 console.log('OK — ошибок нет');

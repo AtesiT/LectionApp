@@ -12,6 +12,8 @@ import { togglePeek, closePeek } from '../ui/peek.js';
 export const session = {
   userId: null, userName: '', avatar: '🙂', room: null, hostId: null, users: [], frozen: false,
   connected: false, lanUrl: '', followHost: false, joinedAt: 0, transport: 'none',
+  games: [],                                  // мини-игры комнаты (шахматы, крестики-нолики)
+  shared: { enabled: false, by: null, state: null },   // общая сцена
 };
 
 export const AVATARS = ['🙂', '😎', '🤖', '🦊', '🐱', '🐼', '🦄', '🐸', '🐙', '🚀', '🎧', '🌟', '🍕', '🧙', '👾', '🐧'];
@@ -313,6 +315,14 @@ function onMessage(msg) {
     case 'announce':
       showAnnouncement(msg.text, msg.by);
       break;
+    case 'games':
+      setGames(msg.games || []);
+      if (msg.entry) appendFeed(msg.entry);
+      break;
+    case 'shared':
+      setShared({ enabled: Boolean(msg.enabled), by: msg.by ?? null, state: msg.state ?? null }, msg);
+      if (msg.entry) appendFeed(msg.entry);
+      break;
     default:
       break;
   }
@@ -348,7 +358,38 @@ function applySnapshot(snap) {
   updateUsers(snap.users || [], snap.hostId);
   hydrateFeed(snap.feed || []);
   if (snap.announcement) showAnnouncement(snap.announcement);
+  setGames(snap.games || []);
+  setShared(snap.shared || { enabled: false, by: null, state: null });
   emit('session:snapshot', snap);
+}
+
+/** Мини-игры: состояние приходит с сервера целиком. */
+function setGames(list) {
+  session.games = Array.isArray(list) ? list : [];
+  emit('session:games', session.games);
+}
+
+/** Общая сцена: включена/выключена ведущим. */
+function setShared(shared, msg = null) {
+  session.shared = {
+    enabled: Boolean(shared.enabled),
+    by: shared.by ?? null,
+    state: shared.state ?? null,
+  };
+  emit('session:shared', { ...session.shared, byName: msg?.byName || '' });
+}
+
+/** Журнал занятия (история комнаты), его хранит сервер. */
+export async function loadJournal(limit = 200) {
+  if (!session.room) return [];
+  try {
+    const resp = await fetch(`/api/journal?room=${encodeURIComponent(session.room)}&limit=${Number(limit) || 200}`);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return Array.isArray(data?.entries) ? data.entries : [];
+  } catch {
+    return [];
+  }
 }
 
 function showAnnouncement(text, by = '') {

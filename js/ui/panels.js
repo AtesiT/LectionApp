@@ -1,7 +1,7 @@
 // Панели управления: объект, анимации, 3D, сцена, верхняя панель (undo/redo), тема.
 // Панели только отражают состояние (store) и отправляют изменения обратно.
 import { $, $$, el, loadJSON, saveJSON, readFileAsDataURL, debounce } from '../core/dom.js';
-import { compressImage, parseVideoUrl, readVideoFile, dataUrlBytes } from '../core/media.js';
+import { compressImage, parseVideoUrl, readVideoFile, dataUrlBytes, prepareMediaFile } from '../core/media.js';
 import { on, emit } from '../core/bus.js';
 import { t, getLang } from '../core/i18n.js';
 import {
@@ -159,12 +159,12 @@ function bindObjectPanel() {
     if (!file) return;
     if (file.size > MAX_IMAGE) { toast(t('obj.imageTooBig'), { type: 'warn' }); e.target.value = ''; return; }
     try {
-      // Сжимаем картинку: тогда она уезжает другим участникам и видят её все.
-      const url = await compressImage(file, { maxSide: 256, quality: 0.72, maxBytes: 32_000 });
-      if (!url) throw new Error('compress_failed');
-      updateActiveObject({ image: url, shape: 'image' }, { action: 'shape' });
-      const kb = Math.round(dataUrlBytes(url) / 1024);
-      toast(t('obj.imageAdded', { kb }), { icon: '🖼' });
+      // Сначала пробуем загрузить на сервер (тогда картинку увидят все и в полном размере),
+      // нет сервера — сжимаем и кладём прямо в состояние сцены.
+      const media = await prepareMediaFile(file, { maxSide: 256, quality: 0.72, maxBytes: 32_000 });
+      if (!media.src) throw new Error('image_failed');
+      updateActiveObject({ image: media.src, shape: 'image' }, { action: 'shape' });
+      toast(media.uploaded ? t('obj.imageUploaded', { kb: Math.round(media.bytes / 1024) }) : t('obj.imageAdded', { kb: Math.round(media.bytes / 1024) }), { icon: '🖼' });
     } catch (err) {
       console.warn(err);
       toast(t('obj.imageFail'), { type: 'warn' });
@@ -176,9 +176,10 @@ function bindObjectPanel() {
     if (!file) return;
     if (file.size > MAX_VIDEO) { toast(t('obj.videoTooBig'), { type: 'warn' }); e.target.value = ''; return; }
     try {
-      const { dataUrl, syncable } = await readVideoFile(file, MEDIA_SYNC_BYTES);
-      updateActiveObject({ video: { provider: 'file', id: file.name, src: dataUrl }, shape: 'video' }, { action: 'shape' });
-      toast(syncable ? t('obj.videoAdded') : t('obj.videoLocal'), { icon: '🎬' });
+      const media = await prepareMediaFile(file, {});
+      if (!media.src) throw new Error('video_failed');
+      updateActiveObject({ video: { provider: 'file', id: file.name, src: media.src }, shape: 'video' }, { action: 'shape' });
+      toast(media.uploaded ? t('obj.videoUploaded', { kb: Math.round(media.bytes / 1024) }) : t('obj.videoLocal'), { icon: '🎬' });
     } catch (err) {
       console.warn(err);
       toast(t('obj.videoFail'), { type: 'warn' });
@@ -445,9 +446,9 @@ function bindScenePanel() {
     if (!file) return;
     if (file.size > MAX_IMAGE) { toast(t('obj.imageTooBig'), { type: 'warn' }); e.target.value = ''; return; }
     try {
-      const raw = await readFileAsDataURL(file);
-      const url = dataUrlBytes(raw) <= BG_IMAGE_SYNC_BYTES ? raw : await compressImage(file, { maxSide: 1280, quality: 0.8, maxBytes: BG_IMAGE_SYNC_BYTES });
-      setBackground({ type: 'image', value: url || raw });
+      const media = await prepareMediaFile(file, { maxSide: 1280, quality: 0.8, maxBytes: BG_IMAGE_SYNC_BYTES });
+      setBackground({ type: 'image', value: media.src });
+      if (media.uploaded) toast(t('scene.imageUploaded', { kb: Math.round(media.bytes / 1024) }), { icon: '🖼' });
     } catch (err) {
       console.warn(err);
       toast(t('obj.imageFail'), { type: 'warn' });
@@ -458,8 +459,13 @@ function bindScenePanel() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_VIDEO) { toast(t('obj.videoTooBig'), { type: 'warn' }); e.target.value = ''; return; }
-    // Небольшой ролик читаем целиком — тогда фон увидят и другие участники.
-    if (file.size <= MEDIA_SYNC_BYTES) {
+    // Сначала пробуем загрузить на сервер — тогда фон увидят все участники комнаты.
+    const media = await prepareMediaFile(file, {});
+    if (media.uploaded) {
+      revokeBgVideo();
+      setBackground({ type: 'video', value: media.src, provider: 'file' });
+      toast(t('scene.videoUploaded', { kb: Math.round(media.bytes / 1024) }), { icon: '🎬' });
+    } else if (file.size <= MEDIA_SYNC_BYTES) {
       const { dataUrl } = await readVideoFile(file, MEDIA_SYNC_BYTES);
       setBackground({ type: 'video', value: dataUrl, provider: 'file' });
     } else {

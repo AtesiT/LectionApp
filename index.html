@@ -89,6 +89,14 @@
     <section id="stageWrap" class="stage-wrap" aria-label="Сцена анимации">
       <div class="stage-layout">
         <div id="stage" class="stage" tabindex="0">
+          <div id="sharedBanner" class="shared-banner" hidden>
+            <span id="sharedBannerText"></span>
+            <span class="shared-view-switch">
+              <button type="button" id="sharedViewShared" class="chip-btn" data-i18n="shared.viewShared">Общая</button>
+              <button type="button" id="sharedViewMine" class="chip-btn" data-i18n="shared.viewMine">Моя</button>
+            </span>
+            <button type="button" id="sharedExitBtn" class="chip-btn" data-i18n="shared.stop">Выключить</button>
+          </div>
           <div id="stageBg" class="stage-bg" aria-hidden="true"></div>
           <div id="stageVideoWrap" class="stage-video hidden" aria-hidden="true">
             <video id="stageVideo" class="stage-video-file hidden" autoplay muted loop playsinline preload="auto"></video>
@@ -136,16 +144,32 @@
           <div id="usersShowcase" class="users-showcase" aria-live="polite"></div>
         </aside>
       </div>
+      <div id="callWrap" class="call-wrap" hidden>
+        <div class="call-head">
+          <b data-i18n="call.title">Звонок и демонстрация экрана</b>
+          <span id="callStatus" class="hint"></span>
+        </div>
+        <div id="callGrid" class="call-grid"></div>
+        <div class="btn-row">
+          <button type="button" id="callScreenBtn" class="secondary" data-i18n="call.screen">🖥 Экран</button>
+          <button type="button" id="callMicBtn" class="secondary" data-i18n="call.mic">🎤 Микрофон</button>
+          <button type="button" id="callCamBtn" class="secondary" data-i18n="call.cam">🎥 Камера</button>
+          <button type="button" id="callHangupBtn" class="secondary" data-i18n="call.hangup">📞 Завершить</button>
+        </div>
+      </div>
     </section>
 
     <!-- Вкладки -->
     <nav class="tabs" role="tablist" aria-label="Разделы">
       <button type="button" class="tab active" role="tab" data-tab="object" data-i18n="tab.object">Объект</button>
       <button type="button" class="tab" role="tab" data-tab="animations" data-i18n="tab.animations">Анимации</button>
+      <button type="button" class="tab" role="tab" data-tab="timeline" data-i18n="tab.timeline">Таймлайн</button>
       <button type="button" class="tab" role="tab" data-tab="model" data-i18n="tab.model">3D</button>
       <button type="button" class="tab" role="tab" data-tab="scene" data-i18n="tab.scene">Сцена</button>
       <button type="button" class="tab" role="tab" data-tab="sound" data-i18n="tab.sound">Звук и голос</button>
       <button type="button" class="tab" role="tab" data-tab="session" data-i18n="tab.session">Сессия</button>
+      <button type="button" class="tab" role="tab" data-tab="games" data-i18n="tab.games">Мини-игры</button>
+      <button type="button" class="tab" role="tab" data-tab="powder" data-i18n="tab.powder">Песочница</button>
       <button type="button" class="tab" role="tab" data-tab="widgets" data-i18n="tab.widgets">Виджеты</button>
       <button type="button" class="tab" role="tab" data-tab="achievements" data-i18n="tab.achievements">Достижения</button>
       <button type="button" class="tab" role="tab" data-tab="help" data-i18n="tab.help">Справка</button>
@@ -235,6 +259,37 @@
             <button type="button" id="clearPathBtn" class="secondary" data-i18n="anim.clearPath">Очистить путь</button>
           </div>
           <p class="hint" data-i18n="anim.hint">Подсказка: клавиши 1–9 включают/выключают анимации, Space — старт/стоп, R — случайная сцена.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Таймлайн -->
+    <section class="panel" data-panel="timeline" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card span-2">
+          <div class="section-title">
+            <h3 data-i18n="tl.title">Таймлайн (ключевые кадры)</h3>
+            <span id="tlTime" class="chip">0.00 / 8.0 с</span>
+          </div>
+          <p class="hint" data-i18n="tl.hint">Выберите объект и свойство, нажмите «＋ Ключ» — значение объекта в этот момент запомнится. Между ключами значения считаются автоматически (для цвета — плавный переход).</p>
+          <div class="tl-toolbar">
+            <label class="field"><span data-i18n="tl.props">Свойство</span><select id="tlProp"></select></label>
+            <button type="button" id="tlAddBtn" class="secondary" data-i18n="tl.add">＋ Ключ</button>
+            <button type="button" id="tlDeleteBtn" class="secondary" data-i18n="tl.delete">Удалить ключ</button>
+            <button type="button" id="tlClearBtn" class="secondary" data-i18n="tl.clear">Очистить</button>
+            <label class="field"><span data-i18n="tl.duration">Длительность: <b id="tlDurVal">8.0</b> с</span><input id="tlDuration" type="range" min="1000" max="30000" step="500" value="8000" /></label>
+            <label class="toggle-row"><input id="tlLoop" type="checkbox" checked /><span data-i18n="tl.loop">Зациклить</span></label>
+          </div>
+          <div class="tl-scale">
+            <button type="button" id="tlPlayBtn" class="secondary tl-play">▶</button>
+            <button type="button" id="tlStopBtn" class="secondary" data-i18n="tl.stop">⏹</button>
+            <div id="tlRuler" class="tl-ruler"><div id="tlPlayhead" class="tl-playhead"></div></div>
+          </div>
+          <div id="tlLanes" class="tl-lanes"></div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="tl.keys">Все ключи</h3>
+          <div id="tlKeys" class="tl-keys"></div>
         </div>
       </div>
     </section>
@@ -347,6 +402,18 @@
           <label class="field"><span data-i18n="scene.intensity">Интенсивность</span><input id="effectIntensity" type="range" min="0.2" max="2.5" step="0.1" value="1" /></label>
           <label class="toggle-row"><input id="weatherSyncToggle" type="checkbox" /><span data-i18n="scene.weatherSync">Сцена повторяет реальную погоду</span></label>
           <p id="weatherSyncInfo" class="hint"></p>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="export.title">Запись и экспорт</h3>
+          <p class="hint" data-i18n="export.hint">Запишите всю сцену (объекты, фон, эффекты и доску) в видео или GIF — файл скачается сам. CSS и HTML пригодятся, чтобы вставить анимацию на свой сайт.</p>
+          <div class="btn-row">
+            <button type="button" id="recSceneBtn" class="secondary" data-i18n="export.video">⏺ Видео сцены</button>
+            <button type="button" id="recGifBtn" class="secondary" data-i18n="export.gif">🎞 GIF 4 с</button>
+            <button type="button" id="exportCssBtn" class="secondary" data-i18n="export.css">📄 CSS-код</button>
+            <button type="button" id="exportHtmlBtn" class="secondary" data-i18n="export.html">📄 HTML-файл</button>
+          </div>
+          <p id="exportStatus" class="hint"></p>
         </div>
 
         <div class="card">
@@ -464,6 +531,37 @@
           </div>
         </div>
 
+        <div class="card">
+          <h3 data-i18n="call.title">Звонок и демонстрация экрана</h3>
+          <p class="hint" data-i18n="call.hint">Видео и звук идут напрямую между браузерами (WebRTC), сервер только помогает им познакомиться. Можно показать экран.</p>
+          <div class="btn-row">
+            <button type="button" id="callBtn" class="secondary" data-i18n="call.btn">📞 Начать звонок</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 data-i18n="shared.title">Общая сцена</h3>
+          <p class="hint" data-i18n="shared.hint">Включите общую сцену — и все участники будут управлять одной и той же сценой. Каждый может переключаться между общей и своей сценой.</p>
+          <label class="toggle-row"><input id="sharedToggle" type="checkbox" /><span data-i18n="shared.toggle">Общая сцена для всех участников</span></label>
+          <div class="btn-row">
+            <button type="button" id="sharedViewSharedCard" class="secondary" data-i18n="shared.viewShared">Общая</button>
+            <button type="button" id="sharedViewMineCard" class="secondary" data-i18n="shared.viewMine">Моя</button>
+          </div>
+        </div>
+
+        <div class="card" id="journalCard">
+          <div class="section-title">
+            <h3 data-i18n="journal.title">Журнал занятия</h3>
+            <button type="button" id="journalRefreshBtn" class="chip-btn" data-i18n="journal.refresh">Обновить</button>
+          </div>
+          <p class="hint" data-i18n="journal.hint">История комнаты хранится на сервере: кто заходил, что делал, во что играл. Всё это переживает перезапуск сервера.</p>
+          <ol id="journalList" class="journal-list"></ol>
+          <div class="btn-row">
+            <button type="button" id="journalCopyBtn" class="secondary" data-i18n="journal.copy">📋 Скопировать</button>
+            <button type="button" id="journalSaveBtn" class="secondary" data-i18n="journal.save">💾 Markdown</button>
+          </div>
+        </div>
+
         <div class="card" id="adminCard" hidden>
           <h3 data-i18n="admin.title">Панель ведущего</h3>
           <div class="btn-row">
@@ -478,6 +576,67 @@
           </div>
           <h4 data-i18n="admin.users">Участники</h4>
           <div id="adminUsers" class="admin-users"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Мини-игры -->
+    <section class="panel" data-panel="games" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card span-2">
+          <div class="section-title">
+            <h3 data-i18n="games.title">Мини-игры</h3>
+            <span class="chip" data-i18n="games.forTwo">Для двоих</span>
+          </div>
+          <p class="hint" data-i18n="games.hint">Создайте шахматы или крестики-нолики — любой участник комнаты сможет присоединиться и ходить на этой же доске. Змейка и «камень-ножницы-бумага» играются локально.</p>
+          <div class="btn-row">
+            <button type="button" id="gameChessBtn" class="secondary" data-i18n="games.chess">♟ Шахматы</button>
+            <button type="button" id="gameTttBtn" class="secondary" data-i18n="games.ttt">⭕ Крестики-нолики</button>
+            <button type="button" id="gameSnakeBtn" class="secondary" data-i18n="games.snake">🐍 Змейка</button>
+            <button type="button" id="gameRpsBtn" class="secondary" data-i18n="games.rps">✊ Камень-ножницы-бумага</button>
+          </div>
+          <div id="gamesList" class="games-list"></div>
+        </div>
+        <div class="card" id="localGameCard" hidden>
+          <h3 id="localGameTitle"></h3>
+          <div id="localGameBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Панель: Песочница -->
+    <section class="panel" data-panel="powder" role="tabpanel">
+      <div class="panel-grid">
+        <div class="card span-2 powder-card">
+          <div class="section-title">
+            <h3 data-i18n="powder.title">Песочница «Порошок»</h3>
+            <span id="powderStats" class="chip"></span>
+          </div>
+          <div class="powder-toolbar">
+            <button type="button" id="powderPlay" class="secondary" data-i18n="powder.pause">⏸ Пауза</button>
+            <button type="button" id="powderStep" class="secondary" data-i18n="powder.step">⏭ Шаг</button>
+            <button type="button" id="powderClear" class="secondary" data-i18n="powder.clear">🧹 Очистить</button>
+            <label class="field"><span data-i18n="powder.brush">Кисть: <b id="powderBrushVal">4</b></span><input id="powderBrush" type="range" min="1" max="14" step="1" value="4" /></label>
+            <label class="field"><span data-i18n="powder.demo">Пример</span>
+              <select id="powderDemo">
+                <option value="volcano" data-i18n="powder.demoVolcano">🌋 Вулкан</option>
+                <option value="rain" data-i18n="powder.demoRain">🌧 Дождь</option>
+                <option value="chemistry" data-i18n="powder.demoChemistry">🧪 Химия</option>
+                <option value="circuit" data-i18n="powder.demoCircuit">⚡ Электричество</option>
+                <option value="fireworks" data-i18n="powder.demoFireworks">🎆 Фейерверк</option>
+                <option value="empty" data-i18n="powder.demoEmpty">Пусто</option>
+              </select>
+            </label>
+          </div>
+          <div class="powder-stage">
+            <canvas id="powderCanvas" aria-label="Песочница"></canvas>
+          </div>
+          <p id="powderHint" class="hint"></p>
+          <p class="hint" data-i18n="powder.tips">Рисуйте мышью или пальцем. Вода тушит огонь, лава плавит лёд и снег, кислота ест почти всё, порох и газ взрываются, растения растут в воде, ток бежит по металлу.</p>
+        </div>
+        <div class="card">
+          <h3 data-i18n="powder.elements">Элементы</h3>
+          <div id="powderPalette" class="powder-palette"></div>
         </div>
       </div>
     </section>
@@ -552,6 +711,24 @@
         <div class="card">
           <h3 data-i18n="hotkeys.title">Горячие клавиши</h3>
           <table id="hotkeysTable" class="hotkeys-table"></table>
+        </div>
+        <div class="card span-3">
+          <div class="section-title">
+            <h3 data-i18n="plugins.title">Плагины (API)</h3>
+            <span class="chip">window.__motion</span>
+          </div>
+          <p class="hint" data-i18n="plugins.hint">Напишите свой код — он получит объект motion и сможет управлять сценой, объектами и чатом. Код выполняется в песочнице: window, document и fetch внутри недоступны.</p>
+          <div class="row-3">
+            <label class="field"><span data-i18n="plugins.example">Пример</span><select id="pluginExample"></select></label>
+          </div>
+          <textarea id="pluginCode" class="plugin-code" rows="8" spellcheck="false"
+                    data-i18n-placeholder="plugins.ph" placeholder="// motion.updateActive({ color: '#F472B6' })"></textarea>
+          <div class="btn-row">
+            <button type="button" id="pluginRunBtn" class="secondary" data-i18n="plugins.run">▶ Запустить</button>
+            <button type="button" id="pluginStopBtn" class="secondary" data-i18n="plugins.stop">⏹ Остановить</button>
+            <button type="button" id="pluginClearBtn" class="secondary" data-i18n="plugins.clear">🧹 Очистить лог</button>
+          </div>
+          <div id="pluginLog" class="plugin-log" aria-live="polite"></div>
         </div>
         <div class="card span-3">
           <div class="section-title">

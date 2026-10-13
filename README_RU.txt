@@ -36,6 +36,11 @@ room_server.py        — сервер: статика, комнаты, WebSocke
                         чат, опросы, доска, роли, прокси внешних API с офлайн-запасом
 manifest.webmanifest, sw.js, icons/ — PWA (установка, офлайн-кэш оболочки)
 TECH.md               — подробно: какие технологии использованы и на что каждая влияет
+report/               — отчёт о программе для сдачи: Otchet_Motion_Playground_Web.html
+                        (самодостаточный файл: открывается браузером и Word, рисунки внутри)
+                        и Otchet_Motion_Playground_Web.docx (тот же отчёт в формате Word)
+tools/                — вспомогательные скрипты: make_report_images.py рисует схемы для отчёта,
+                        make_report.py собирает из них и из tools/report_content.py HTML и DOCX
 js/main.js            — точка входа, порядок инициализации модулей
 js/core/              — bus (события), dom (утилиты), store (состояние + undo/redo), i18n (RU/EN),
                         media (ссылки YouTube/Rutube/VK, загрузка на сервер, сжатие картинок, лимиты),

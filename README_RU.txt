@@ -43,14 +43,21 @@ report/               — материалы для сдачи:
                         Prezentaciya_Motion_Playground_Web.pptx — презентация на 20 слайдов;
                         Prezentaciya_Motion_Playground_Web.html — та же презентация для браузера
                         (один файл, перелистывание стрелками или щелчком, печать в альбоме)
-report/prezentacii/   — пять презентаций по 30 слайдов с разным оформлением (одна и та же
-                        программа, разные дизайны): klassicheskaya, temnaya, akademicheskaya,
-                        sovremennaya, minimalizm. У каждой — .pptx и .html; index.html —
-                        оглавление со ссылками и описанием оформлений
+report/prezentacii/   — пять разных презентаций, по 30 слайдов в каждой. Они отличаются и
+                        содержанием, и оформлением:
+                        Prezentaciya_1_zashchita_proekta     — защита проекта (классическая),
+                        Prezentaciya_2_znakomstvo_s_programmoy — знакомство для 7-9 класса
+                        (современная), Prezentaciya_3_dvenadcat_urokov — поурочный план курса
+                        (академическая), Prezentaciya_4_tehnicheskiy_razbor — устройство
+                        программы для кружка (тёмная), Prezentaciya_5_pyat_minut_o_proekte —
+                        короткий показ на выставке (минимализм). У каждой — .pptx и .html;
+                        index.html — оглавление со ссылками и описанием презентаций
 tools/                — вспомогательные скрипты: make_report_images.py рисует схемы для отчёта,
                         make_report.py собирает из них и из tools/report_content.py HTML и DOCX,
-                        make_slides.py — презентацию на 20 слайдов, make_decks.py — пять
-                        презентаций по 30 слайдов; тексты слайдов — в tools/slides_content.py
+                        make_slides.py — презентацию на 20 слайдов (текст в slides_content.py),
+                        make_decks.py — пять презентаций по 30 слайдов; текст каждой презентации
+                        лежит в своём модуле: deck1_zashchita.py, deck2_znakomstvo.py,
+                        deck3_uroki.py, deck4_tehnika.py, deck5_pitch.py
 js/main.js            — точка входа, порядок инициализации модулей
 js/core/              — bus (события), dom (утилиты), store (состояние + undo/redo), i18n (RU/EN),
                         media (ссылки YouTube/Rutube/VK, загрузка на сервер, сжатие картинок, лимиты),

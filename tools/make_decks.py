@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Пять презентаций с разным оформлением, по 30 слайдов в каждой.
+"""Пять разных презентаций, по 30 слайдов в каждой.
 
-Содержание одно и то же (tools/slides_content.py), меняется только дизайн:
-шрифт, цвета, оформление заголовка, колонтитул и титульный слайд.
+Презентации отличаются не только оформлением, но и содержанием: у каждой своя
+аудитория, своя цель и собственный набор слайдов. Текст каждой презентации
+лежит в отдельном модуле:
 
-Результат — папка report/prezentacii:
-    Prezentaciya_1_klassicheskaya.pptx / .html   — строгое оформление, Times New Roman
-    Prezentaciya_2_temnaya.*                     — тёмная тема, Verdana
-    Prezentaciya_3_akademicheskaya.*             — кремовый фон, Georgia, рамка
-    Prezentaciya_4_sovremennaya.*                — цветная полоса-заголовок, Calibri
-    Prezentaciya_5_minimalizm.*                  — много воздуха, Verdana, крупный номер
-    index.html                                   — оглавление со ссылками на все пять
+    deck1_zashchita.py   — защита проекта перед комиссией   (классическая)
+    deck2_znakomstvo.py  — знакомство с программой, 7-9 класс (современная)
+    deck3_uroki.py       — двенадцать уроков для учителя      (академическая)
+    deck4_tehnika.py     — технический разбор для кружка      (тёмная)
+    deck5_pitch.py       — короткий показ на выставке         (минимализм)
+
+Каждый модуль отдаёт словарь DECK с полями key, file, theme, name, desc,
+title, sub, meta, note и slides. Оформление задаётся словарём THEMES: шрифт,
+цвета, decoration заголовка и вид номера слайда.
+
+Результат — папка report/prezentacii: пять пар .html + .pptx и index.html.
 
 Запуск:  python3 tools/make_decks.py
 """
@@ -25,7 +30,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from slides_content import SLIDES, DECK_TITLE, DECK_SUB  # noqa: E402
+from deck1_zashchita import DECK as DECK_1  # noqa: E402
+from deck2_znakomstvo import DECK as DECK_2  # noqa: E402
+from deck3_uroki import DECK as DECK_3  # noqa: E402
+from deck4_tehnika import DECK as DECK_4  # noqa: E402
+from deck5_pitch import DECK as DECK_5  # noqa: E402
+
+DECKS = [DECK_1, DECK_2, DECK_3, DECK_4, DECK_5]
 
 IMG_DIR = os.path.join(ROOT, 'report', 'img')
 OUT_DIR = os.path.join(ROOT, 'report', 'prezentacii')
@@ -77,6 +88,15 @@ THEMES = [
          title_bg='FFFFFF', title_c2='111111', sub_c='4B5563', meta_c='6B7280'),
 ]
 
+THEME_BY_KEY = {t['key']: t for t in THEMES}
+
+
+def deck_slides(deck):
+    """Титульный слайд плюс слайды самой презентации."""
+    return ([dict(kind='title', title=deck['title'], sub=deck['sub'],
+                  meta=deck['meta'], note=deck['note'])]
+            + [dict(kind='slide', **s) for s in deck['slides']])
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -108,7 +128,7 @@ def b64(name, cache):
 # PPTX
 # ---------------------------------------------------------------------------
 
-def build_pptx(theme, path):
+def build_pptx(theme, path, slides, deck):
     try:
         from pptx import Presentation
         from pptx.util import Inches, Pt, Emu
@@ -193,7 +213,7 @@ def build_pptx(theme, path):
     content_w = Inches(11.6) if theme['decor'] == 'leftbar' else Inches(11.8)
     content_h = Inches(4.40) if theme['decor'] == 'band' else Inches(4.55)
 
-    for idx, s in enumerate(SLIDES, start=1):
+    for idx, s in enumerate(slides, start=1):
         slide = prs.slides.add_slide(blank)
 
         # фон
@@ -310,7 +330,7 @@ def build_pptx(theme, path):
             line_c = rgb('1E293B') if theme['decor'] == 'leftbar' else rgb('CBD5E1')
             rect(slide, left, Inches(6.95), content_w, Emu(9525), line_c)
             box = textbox(slide, left, Inches(7.05), Inches(8.0), Inches(0.35))
-            put(box, [DECK_TITLE], 11, MUTED_C, bullet='', space_after=0)
+            put(box, [deck['title']], 11, MUTED_C, bullet='', space_after=0)
             box = textbox(slide, Inches(11.3), Inches(7.05), Inches(1.3), Inches(0.35),
                           PP_ALIGN.RIGHT)
             put(box, [str(idx)], 11, MUTED_C, bullet='', space_after=0, align=PP_ALIGN.RIGHT)
@@ -325,7 +345,7 @@ def build_pptx(theme, path):
             put(badge, [str(idx)], 14, RGBColor(0xFF, 0xFF, 0xFF), bold=True, bullet='',
                 space_after=0, align=PP_ALIGN.CENTER, font=FONT)
             box = textbox(slide, left, Inches(7.02), Inches(8.0), Inches(0.35))
-            put(box, [DECK_TITLE], 11, MUTED_C, bullet='', space_after=0)
+            put(box, [deck['title']], 11, MUTED_C, bullet='', space_after=0)
 
         if s.get('note'):
             slide.notes_slide.notes_text_frame.text = plain(s['note'])
@@ -561,7 +581,7 @@ def css_for(theme):
     return css + extra
 
 
-def slide_html(s, idx, theme, cache):
+def slide_html(s, idx, theme, cache, deck_title):
     d = theme['decor']
     cls = 'slide title' if s['kind'] == 'title' else 'slide'
     if idx == 1:
@@ -619,29 +639,32 @@ def slide_html(s, idx, theme, cache):
 
     if theme['number'] == 'footer':
         out.append('<div class="foot"></div>')
-        out.append(f'<div class="footname">{DECK_TITLE}</div>')
+        out.append(f'<div class="footname">{deck_title}</div>')
         out.append(f'<div class="num">{idx}</div>')
     elif theme['number'] == 'badge':
-        out.append(f'<div class="footname">{DECK_TITLE}</div>')
+        out.append(f'<div class="footname">{deck_title}</div>')
         out.append(f'<div class="badge">{idx}</div>')
     else:
-        out.append(f'<div class="footname">{DECK_TITLE}</div>')
+        out.append(f'<div class="footname">{deck_title}</div>')
 
     out.append('</section>')
     return '\n'.join(out)
 
 
-def build_html(theme, path, cache):
-    body = '\n'.join(slide_html(s, i, theme, cache) for i, s in enumerate(SLIDES, start=1))
+def build_html(theme, path, cache, deck):
+    slides = deck_slides(deck)
+    deck_title = html.escape(deck['title'])
+    body = '\n'.join(slide_html(s, i, theme, cache, deck_title)
+                      for i, s in enumerate(slides, start=1))
     text = (
         '<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n'
-        f'<title>{html.escape(DECK_TITLE)} — {html.escape(theme["name"])}</title>\n'
+        f'<title>{deck_title} — {html.escape(deck["name"])}</title>\n'
         f'<style>{css_for(theme)}</style>\n</head>\n<body>\n'
         '<div id="stage"><div id="scaler">\n' + body + '\n</div></div>\n'
         '<div id="ui">'
         '<button id="first" title="На первый слайд">«</button>'
         '<button id="prev" title="Назад">←</button>'
-        '<span id="count">1 / ' + str(len(SLIDES)) + '</span>'
+        '<span id="count">1 / ' + str(len(slides)) + '</span>'
         '<button id="next" title="Вперёд">→</button>'
         '<button id="print" title="Печать">Печать</button>'
         '</div>\n'
@@ -656,34 +679,39 @@ def build_html(theme, path, cache):
 
 def build_index(path):
     cards = []
-    for t in THEMES:
+    for i, deck in enumerate(DECKS, start=1):
+        t = THEME_BY_KEY[deck['theme']]
         cards.append(
             f'  <li>\n'
-            f'    <div class="n">{t["name"]}</div>\n'
-            f'    <p>{html.escape(t["desc"])}</p>\n'
+            f'    <div class="n">{i}. {html.escape(deck["name"])}</div>\n'
+            f'    <div class="who">{html.escape(deck["title"])} · '
+            f'оформление: {html.escape(t["name"])}</div>\n'
+            f'    <p>{html.escape(deck["desc"])}</p>\n'
             f'    <p class="links">\n'
-            f'      <a href="{t["file"]}.html">открыть в браузере</a> ·\n'
-            f'      <a href="{t["file"]}.pptx">скачать .pptx</a>\n'
+            f'      <a href="{deck["file"]}.html">открыть в браузере</a> ·\n'
+            f'      <a href="{deck["file"]}.pptx">скачать .pptx</a>\n'
             f'    </p>\n'
             f'  </li>')
     text = (
         '<!DOCTYPE html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n'
-        f'<title>{html.escape(DECK_TITLE)} — пять презентаций</title>\n'
+        '<title>Пять презентаций о проекте Motion Playground Web</title>\n'
         '<style>\n'
         'body { margin:0; padding:40px 28px; background:#0b1020; color:#e5e7eb;\n'
         '       font-family:Verdana, sans-serif; line-height:1.5; }\n'
         'h1 { font-size:26px; margin:0 0 6px; }\n'
         '.sub { color:#93c5fd; margin:0 0 28px; }\n'
         'ul { list-style:none; padding:0; margin:0; display:grid; gap:16px;\n'
-        '     grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); }\n'
+        '     grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); }\n'
         'li { background:#111827; border:1px solid #1f2937; border-radius:10px; padding:18px 20px; }\n'
-        '.n { font-size:20px; font-weight:bold; color:#22d3ee; margin-bottom:8px; }\n'
+        '.n { font-size:20px; font-weight:bold; color:#22d3ee; margin-bottom:6px; }\n'
+        '.who { font-size:14px; color:#94a3b8; margin-bottom:10px; }\n'
         'p { margin:0 0 12px; font-size:15px; color:#cbd5e1; }\n'
         '.links { margin:0; }\n'
         'a { color:#93c5fd; }\n'
         '</style>\n</head>\n<body>\n'
-        f'<h1>{html.escape(DECK_TITLE)} — пять презентаций, по 30 слайдов</h1>\n'
-        f'<p class="sub">{html.escape(DECK_SUB)}</p>\n'
+        '<h1>Пять презентаций о проекте: разные аудитории, по 30 слайдов</h1>\n'
+        '<p class="sub">Каждая презентация написана отдельно: свой текст, свои слайды '
+        'и своё оформление.</p>\n'
         '<ul>\n' + '\n'.join(cards) + '\n</ul>\n'
         '</body></html>\n')
     with open(path, 'w', encoding='utf-8-sig') as fh:
@@ -695,21 +723,24 @@ def build_index(path):
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
-    used = [s['img'] for s in SLIDES if s.get('img')]
-    missing = [n for n in used if not os.path.exists(os.path.join(IMG_DIR, n))]
+    used = [s['img'] for deck in DECKS for s in deck['slides'] if s.get('img')]
+    missing = sorted({n for n in used if not os.path.exists(os.path.join(IMG_DIR, n))})
     if missing:
         print('Нет рисунков:', ', '.join(missing))
         print('Сначала запустите: python3 tools/make_report_images.py')
         return 1
     cache = {}
-    print(f'Слайдов в каждой презентации: {len(SLIDES)}')
-    for t in THEMES:
-        h = os.path.join(OUT_DIR, t['file'] + '.html')
-        p = os.path.join(OUT_DIR, t['file'] + '.pptx')
-        hs = build_html(t, h, cache)
-        print(f'  {os.path.relpath(h, ROOT)}  ({hs // 1024} КБ)')
-        if build_pptx(t, p):
-            print(f'  {os.path.relpath(p, ROOT)}  ({os.path.getsize(p) // 1024} КБ)')
+    for i, deck in enumerate(DECKS, start=1):
+        theme = THEME_BY_KEY[deck['theme']]
+        slides = deck_slides(deck)
+        h = os.path.join(OUT_DIR, deck['file'] + '.html')
+        p = os.path.join(OUT_DIR, deck['file'] + '.pptx')
+        hs = build_html(theme, h, cache, deck)
+        print(f'  {i}. {deck["name"]}: {len(slides)} слайдов, '
+              f'{sum(1 for x in deck["slides"] if x.get("img"))} рисунков')
+        print(f'     {os.path.relpath(h, ROOT)}  ({hs // 1024} КБ)')
+        if build_pptx(theme, p, slides, deck):
+            print(f'     {os.path.relpath(p, ROOT)}  ({os.path.getsize(p) // 1024} КБ)')
     idx = os.path.join(OUT_DIR, 'index.html')
     build_index(idx)
     print(f'  {os.path.relpath(idx, ROOT)}  (оглавление)')

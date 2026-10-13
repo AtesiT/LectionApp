@@ -159,6 +159,14 @@ class Canvas:
             if res.returncode != 0:
                 print("ОШИБКА convert:", res.stderr.strip()[:400], file=sys.stderr)
                 return False
+        # схемы — это плоские цвета, поэтому 256 цветов хватает: файл становится втрое меньше
+        opt = path + ".opt.png"
+        res = subprocess.run(["convert", path, "-strip", "-colors", "256", "png8:" + opt],
+                             capture_output=True, text=True)
+        if res.returncode == 0 and os.path.exists(opt) and os.path.getsize(opt) > 0:
+            os.replace(opt, path)
+        elif os.path.exists(opt):
+            os.remove(opt)
         size = os.path.getsize(path)
         print(f"  {os.path.relpath(path, ROOT)}  ({self.w}×{self.h}, {size // 1024} КБ)")
         return True

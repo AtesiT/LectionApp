@@ -5,7 +5,7 @@
 собираются примитивами ImageMagick (MVG) со шрифтом DejaVu.
 
 Запуск:  python3 tools/make_report_images.py
-Результат: report/img/*.png
+Результат: report/img/*.png (схемы для отчёта и для презентации)
 """
 import os
 import subprocess
@@ -750,6 +750,96 @@ def fig_modules(path):
     return c.render(path)
 
 
+# =====================================================================
+# Рисунок 9. Путь одного кадра сцены (для презентации)
+# =====================================================================
+def fig_frame(path):
+    c = Canvas(1240, 520)
+    stages = [
+        ("1. Ввод", ACCENT,
+         ["мышь и касание, панели,", "таймлайн, голос,", "сообщения из комнаты"]),
+        ("2. Состояние", ACCENT2,
+         ["store.js: объекты, фон,", "эффекты, настройки;", "история для отмены"]),
+        ("3. Расчёт", OK,
+         ["шаг времени dt, траектория,", "физика, значения", "между ключами"]),
+        ("4. Отрисовка", WARN,
+         ["transform и стили объектов,", "слои canvas: фон,", "эффекты, доска"]),
+        ("5. Обмен", DANGER,
+         ["снимок сцены участникам,", "запись видео и GIF,", "экспорт CSS/HTML"]),
+    ]
+    x = 30
+    y = 70
+    w = 212
+    h = 190
+    gap = 22
+    for i, (title, color, lines) in enumerate(stages):
+        c.rect(x, y, x + w, y + h, CARD, color, 1.6, r=10)
+        c.rect(x, y, x + w, y + 8, color, None, 0, r=4)
+        ty = c.label(x + 16, y + 40, title, 16, INK, bold=True, maxw=w - 32)
+        for line in lines:
+            ty = c.label(x + 16, ty + 6, line, 12, MUTED, maxw=w - 32)
+        if i < len(stages) - 1:
+            c.arrow(x + w + 3, y + h // 2, x + w + gap - 3, y + h // 2, LINE, 2)
+        x += w + gap
+    # возврат к следующему кадру
+    c.line(30, 300, 1210, 300, LINE, 2, dash=True)
+    c.arrow(1210, 300, 1210, 330, LINE, 2)
+    c.arrow(1210, 330, 30, 330, LINE, 2)
+    c.arrow(30, 330, 30, 300, LINE, 2)
+    c.label(620, 322, "следующий кадр — 60 раз в секунду", 13, MUTED, bold=True, anchor="center")
+
+    c.rect(30, 360, 1210, 500, PANEL, LINE, 1.2, r=10)
+    c.label(56, 396, "Почему сцена остаётся плавной", 16, INK, bold=True)
+    for i, line in enumerate([
+        "• расчёт привязан к кадру браузера: requestAnimationFrame, а не таймер с фиксированной задержкой;",
+        "• шаг времени ограничен 0,033 с — при «заморозке» вкладки объекты не улетают за границу сцены;",
+        "• объекты двигаются через transform, поэтому браузер перерисовывает их на видеокарте;",
+        "• частицы, доска и свечение песочницы считаются отдельно и не мешают основному кадру.",
+    ]):
+        c.label(56, 424 + i * 20, line, 12, MUTED, maxw=1140)
+    return c.render(path)
+
+
+# =====================================================================
+# Рисунок 10. Проверки программы (для презентации)
+# =====================================================================
+def fig_tests(path):
+    c = Canvas(1240, 700)
+    data = [
+        ("smoke.mjs — интерфейс целиком", 181, ACCENT),
+        ("server_e2e.mjs — сервер и протокол", 78, ACCENT2),
+        ("powder_test.mjs — песочница", 38, OK),
+        ("chess_test.py — шахматный движок", 34, WARN),
+        ("gif_test.py — свой кодировщик GIF", 18, DANGER),
+        ("media_test.mjs — видео и файлы", 14, ACCENT),
+        ("plugins_test.mjs — плагины", 12, ACCENT2),
+        ("snake_test.mjs — змейка", 11, OK),
+        ("timeline_test.mjs — ключевые кадры", 10, WARN),
+        ("export_test.mjs — экспорт CSS/HTML", 9, DANGER),
+    ]
+    total = sum(v for _, v, _ in data)
+    x0 = 400
+    max_w = 700
+    scale = max_w / max(v for _, v, _ in data)
+    y = 70
+    for name, value, color in data:
+        c.label(40, y + 20, name, 14, INK, maxw=340)
+        bw = max(6, value * scale)
+        c.rect(x0, y, x0 + bw, y + 30, color, None, 0, r=5)
+        c.label(x0 + bw + 12, y + 22, str(value), 14, INK, bold=True)
+        y += 44
+    c.line(40, y + 4, 1210, y + 4, LINE, 2)
+    c.label(40, y + 40, "Итого", 16, INK, bold=True, maxw=340)
+    c.label(x0, y + 40, f"{total} проверок, все проходят успешно", 16, INK, bold=True)
+    c.rect(40, y + 66, 1210, y + 140, PANEL, LINE, 1.2, r=10)
+    for i, line in enumerate([
+        "Дополнительно: синтаксис всех 50 модулей, компиляция room_server.py, совпадение словарей RU/EN (720 ключей),",
+        "список кэша сервис-воркера и сверка QR-кодов независимым декодером (qr_roundtrip.py).",
+    ]):
+        c.label(64, y + 100 + i * 22, line, 12, MUTED, maxw=1140)
+    return c.render(path)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     print("Рисуем схемы для отчёта:")
@@ -762,6 +852,8 @@ def main():
         ("fig6-network.png", fig_network),
         ("fig7-algorithm.png", fig_algorithm),
         ("fig8-modules.png", fig_modules),
+        ("fig9-frame.png", fig_frame),
+        ("fig10-tests.png", fig_tests),
     ]
     ok = True
     for name, fn in jobs:
